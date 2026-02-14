@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Camera Color Shooter MVP</title>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+<style>
+  :root{
+    --bg:#0b1220;
+    --card:rgba(255,255,255,0.06);
+    --stroke:rgba(255,255,255,0.10);
+    --text:#fff;
+    --muted:rgba(255,255,255,0.75);
+    --btn:#334155;
+    --primary:#2563eb;
+    --danger:#b91c1c;
+    --ok:#22c55e;
+    --warn:#f59e0b;
+  }
+  body{
+    margin:0;
+    font-family: Arial, sans-serif;
+    background:#111;
+    color:var(--text);
+    display:flex;
+    justify-content:center;
+    padding:14px 0;
+    box-sizing:border-box;
+  }
+  .app{
+    width:92vw;
+    max-width:560px;
+  }
+  h2{ margin:10px 0; }
+  .screen{ display:none; }
+  .screen.active{ display:block; }
+
+  .card{
+    background:var(--bg);
+    border:1px solid var(--stroke);
+    border-radius:16px;
+    padding:12px;
+    margin-top:12px;
+  }
+  .row{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+  }
+  .row + .row{ margin-top:10px; }
+  .pill{
+    background:rgba(255,255,255,0.08);
+    padding:8px 10px;
+    border-radius:999px;
+    font-size:13px;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+  }
+  .btn{
+    border:none;
+    border-radius:12px;
+    padding:10px 12px;
+    font-weight:800;
+    cursor:pointer;
+    color:white;
+    background:var(--btn);
+  }
+  .btn.primary{ background:var(--primary); }
+  .btn.danger{ background:var(--danger); }
+  .btn:disabled{ opacity:0.45; cursor:not-allowed; }
+
+  input, select{
+    width:100%;
+    padding:11px 12px;
+    border-radius:12px;
+    border:1px solid var(--stroke);
+    background:rgba(255,255,255,0.06);
+    color:white;
+    outline:none;
+    box-sizing:border-box;
+  }
+  label{ font-size:12px; opacity:0.85; }
+  .field{ display:flex; flex-direction:column; gap:6px; flex:1; min-width:140px; }
+
+  /* Camera */
+  .wrapper{
+    position:relative;
+    width:100%;
+    border-radius:16px;
+    overflow:hidden;
+    background:#000;
+  }
+  video{
+    width:100%;
+    height:auto;
+    display:block;
+    transform-origin:center;
+  }
+  canvas{
+    position:absolute;
+    left:0; top:0;
+    width:100%; height:100%;
+    pointer-events:none;
+  }
+  .crosshair{
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:34px;
+    height:34px;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+    opacity:0.95;
+  }
+  .crosshair:before,.crosshair:after{
+    content:"";
+    position:absolute;
+    left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    background:rgba(255,255,255,0.85);
+    border-radius:2px;
+  }
+  .crosshair:before{ width:34px; height:3px; }
+  .crosshair:after{ width:3px; height:34px; }
+  .crosshair .dot{
+    position:absolute;
+    left:50%; top:50%;
+    width:6px; height:6px;
+    transform:translate(-50%,-50%);
+    background:rgba(255,255,255,0.95);
+    border-radius:50%;
+  }
+  .cornerBtn{
+    position:absolute;
+    top:10px;
+    right:10px;
+    width:48px;
+    height:48px;
+    border-radius:50%;
+    border:none;
+    background:rgba(0,0,0,0.65);
+    color:white;
+    font-size:22px;
+    cursor:pointer;
+    z-index:5;
+  }
+  .cornerBtn.left{
+    right:auto;
+    left:10px;
+  }
+
+  /* player list */
+  .plist{ display:flex; flex-direction:column; gap:10px; }
+  .prow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:10px 12px;
+    border-radius:14px;
+    background:var(--card);
+    border:1px solid rgba(255,255,255,0.06);
+  }
+  .pL{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .sw{
+    width:18px; height:18px; border-radius:6px;
+    border:1px solid rgba(255,255,255,0.25);
+    flex:0 0 auto;
+    background:transparent;
+  }
+  .pname{
+    font-weight:900;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:280px;
+  }
+  .muted{ opacity:0.75; font-size:12px; }
+  .badge{
+    padding:6px 10px;
+    border-radius:999px;
+    font-size:12px;
+    background:rgba(255,255,255,0.08);
+  }
+
+  /* Game HUD */
+  .hud{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .hpbar{
+    width:160px;
+    height:10px;
+    border-radius:999px;
+    background:rgba(255,255,255,0.12);
+    overflow:hidden;
+  }
+  .hpfill{
+    height:100%;
+    width:100%;
+    background:var(--ok);
+  }
+  .bigBtn{
+    width:100%;
+    padding:14px 16px;
+    border-radius:14px;
+    border:none;
+    background:var(--primary);
+    color:white;
+    font-weight:900;
+    font-size:18px;
+    cursor:pointer;
+  }
+  .bigBtn.danger{ background:var(--danger); }
+  .bigBtn.gray{ background:var(--btn); }
+
+  .resultRow{
+    display:flex; flex-direction:column; gap:8px;
+  }
+
+  /* Toast */
+  #toastWrap{
+    position:fixed;
+    bottom:18px;
+    left:50%;
+    transform:translateX(-50%);
+    z-index:200;
+    width:min(560px, 92vw);
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    pointer-events:none;
+  }
+  .toast{
+    pointer-events:none;
+    background:rgba(15, 23, 42, 0.92);
+    border:1px solid rgba(255,255,255,0.12);
+    color:white;
+    border-radius:14px;
+    padding:12px 14px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.35);
+    font-size:13px;
+    line-height:1.35;
+  }
+  .toast.warn{ border-color: rgba(245, 158, 11, 0.45); }
+  .toast.ok{ border-color: rgba(34, 197, 94, 0.45); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- START SCREEN -->
+  <div id="screenStart" class="screen active">
+    <h2>Camera Color Shooter MVP</h2>
+    <div class="card">
+      <div class="row">
+        <div class="field">
+          <label>Your Name</label>
+          <input id="nameInput" placeholder="Mohith" />
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="createRoomBtn">Create Room (Host)</button>
+      </div>
+      <hr style="border:0;border-top:1px solid rgba(255,255,255,0.10);margin:12px 0;">
+      <div class="row">
+        <div class="field">
+          <label>Room ID (4 digits)</label>
+          <input id="roomInput" placeholder="4821" inputmode="numeric" />
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn" id="joinRoomBtn">Join Room</button>
+      </div>
+      <div class="muted" style="margin-top:10px;">
+        ⚠️ On mobile camera requires HTTPS (or localhost). Use a tunnel (ngrok/Cloudflare) if needed.
+      </div>
+    </div>
+  </div>
+
+  <!-- LOBBY SCREEN -->
+  <div id="screenLobby" class="screen">
+    <div class="row">
+      <h2 style="margin:0;">Lobby</h2>
+      <button class="btn danger" id="leaveBtn">Leave</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="pill">Room: <b id="roomCodeText">----</b></div>
+        <div class="pill">You: <b id="meNameText">—</b></div>
+        <div class="pill">Host: <b id="hostNameText">—</b></div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div class="field" style="min-width:170px;">
+          <label>Game Type</label>
+          <select id="gameTypeSel">
+            <option value="team">Team Match (auto teams)</option>
+            <option value="chaos">Chaos (FFA)</option>
+          </select>
+        </div>
+        <div class="field" style="min-width:170px;">
+          <label>Game Mode</label>
+          <select id="modeSel">
+            <option value="standard">Standard (∞ bullets)</option>
+            <option value="limited">Limited (craft bullets/shields)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Game Time (sec)</label>
+          <input id="gameSecondsInp" type="number" min="30" max="3600" value="180" />
+        </div>
+        <div class="field">
+          <label>Damage / Hit</label>
+          <input id="damageInp" type="number" min="1" max="200" value="10" />
+        </div>
+        <div class="field">
+          <label>Max HP</label>
+          <input id="maxHpInp" type="number" min="10" max="500" value="100" />
+        </div>
+      </div>
+
+      <div id="limitedBox" style="display:none;">
+        <div class="row">
+          <div class="field">
+            <label>Initial Bullets</label>
+            <input id="initBulletsInp" type="number" min="0" max="999" value="5" />
+          </div>
+          <div class="field">
+            <label>Initial Shields</label>
+            <input id="initShieldsInp" type="number" min="0" max="2" value="1" />
+          </div>
+          <div class="field">
+            <label>Shield Duration (sec)</label>
+            <input id="shieldDurInp" type="number" min="5" max="60" value="20" />
+          </div>
+          <div class="field">
+            <label>Shield Cap</label>
+            <input id="shieldCapInp" type="number" min="0" max="2" value="2" />
+          </div>
+        </div>
+      </div>
+
+      <div class="muted" style="margin-top:6px;">
+        Host must assign a uniform color for every player (including host) before starting.
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn primary" id="saveSettingsBtn">Save Settings (Host)</button>
+        <button class="btn primary" id="startGameBtn">Start Game (Host)</button>
+      </div>
+    </div>
+
+    <!-- Host color assignment -->
+    <div class="card" id="assignCard">
+      <div class="row">
+        <div class="field" style="min-width:240px;">
+          <label>Assign picked color to player</label>
+          <select id="assignPlayerSel"></select>
+        </div>
+        <button class="btn" id="openCameraBtn">Open Camera</button>
+        <button class="btn" id="pickTorsoBtn" disabled>Pick Color From Target</button>
+        <div class="pill" title="Picked uniform color + confidence">
+          <span class="sw" id="pickedSwatch" style="background:transparent;"></span>
+          <span id="pickedInfo">No pick</span>
+        </div>
+        <button class="btn primary" id="assignBtn" disabled>Assign</button>
+      </div>
+
+      <div class="muted" style="margin-top:8px;">
+        Confidence shown. If low, you’ll get a warning.
+      </div>
+
+      <div class="wrapper" id="lobbyCamWrap" style="margin-top:12px; display:none;">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="canvas"></canvas>
+        <div class="crosshair"><div class="dot"></div></div>
+        <button class="cornerBtn" id="switchBtn" title="Switch camera">🔄</button>
+        <button class="cornerBtn left" id="closeCamBtn" title="Close camera">✕</button>
+      </div>
+    </div>
+
+    <!-- Player list -->
+    <div class="card">
+      <div class="row">
+        <b>Players</b>
+        <span class="muted">Click “Open Camera” to assign colors (host)</span>
+      </div>
+      <div class="plist" id="playersList"></div>
+    </div>
+  </div>
+
+  <!-- GAME SCREEN -->
+  <div id="screenGame" class="screen">
+    <div class="row">
+      <h2 style="margin:0;">Game</h2>
+      <div class="pill">Room: <b id="roomCodeText2">----</b></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="pill">Time Left: <b id="timeLeftText">—</b></div>
+        <div class="pill">Mode: <b id="modeText">—</b></div>
+        <div class="pill">Type: <b id="typeText">—</b></div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div class="pill">HP:
+          <div class="hpbar"><div class="hpfill" id="hpFill"></div></div>
+          <b id="hpText">100</b>
+        </div>
+        <div class="pill">Bullets: <b id="bulletsText">—</b></div>
+        <div class="pill">Shields: <b id="shieldsText">—</b></div>
+        <div class="pill">Shield Active: <b id="shieldActiveText">—</b></div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <button class="bigBtn" id="shootBtn">🔫 SHOOT</button>
+        <button class="bigBtn gray" id="shieldBtn">🛡 SHIELD</button>
+      </div>
+
+      <div class="row" id="limitedActions" style="display:none; margin-top:10px;">
+        <button class="btn" id="earnBulletBtn">🎯 Earn Bullet</button>
+        <button class="btn" id="earnShieldBtn">🎯 Earn Shield</button>
+        <div class="pill" title="Craft target color">
+          Target:
+          <span class="sw" id="craftSwatch" style="background:transparent;"></span>
+          <b id="craftText">—</b>
+          <span class="muted" id="craftConfText"></span>
+        </div>
+      </div>
+
+      <div class="wrapper" id="gameCamWrap" style="margin-top:12px;">
+        <video id="video2" autoplay playsinline muted></video>
+        <canvas id="canvas2"></canvas>
+        <div class="crosshair"><div class="dot"></div></div>
+        <button class="cornerBtn" id="switchBtn2" title="Switch camera">🔄</button>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div class="pill">Status: <b id="statusText">—</b></div>
+        <div class="pill">Confidence: <b id="confText">—</b></div>
+      </div>
+
+      <div class="muted" style="margin-top:8px;">
+        Attack hits are resolved by uniform color mapping assigned in lobby.
+        In Limited mode, crafting uses crosshair sampling from environment.
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS SCREEN -->
+  <div id="screenResults" class="screen">
+    <div class="row">
+      <h2 style="margin:0;">Results</h2>
+      <button class="btn" id="backToLobbyBtn">Back to Lobby</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="pill">Room: <b id="roomCodeText3">----</b></div>
+        <div class="pill">Reason: <b id="endReasonText">—</b></div>
+        <div class="pill">Winner: <b id="winnerText">—</b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <b>Player Stats</b>
+      <div class="plist" id="resultsList" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+      <b>Your Hit Log</b>
+      <div id="myHitLog" class="muted" style="margin-top:10px; white-space:pre-wrap;"></div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toastWrap"></div>
+
+<script>
+/* =========================
+   Socket + Global State
+========================= */
+const socket = io();
+
+let roomId = null;
+let myId = null;
+let state = null; // room snapshot
+let model = null;
+
+let stream1 = null; // lobby cam
+let stream2 = null; // game cam
+
+let facingMode1 = "environment";
+let facingMode2 = "environment";
+
+let lastPersons1 = [];
+let lastTarget1 = null;
+
+let lastPersons2 = [];
+let lastTarget2 = null;
+
+let isDetecting1 = false;
+let isDetecting2 = false;
+let lastDetectT1 = 0;
+let lastDetectT2 = 0;
+
+const DETECT_FPS = 10;
+const DETECT_INTERVAL = 1000 / DETECT_FPS;
+const PERSON_SCORE_MIN = 0.55;
+
+// torso region for uniform sampling
+const REGION = { x0: 0.25, y0: 0.25, x1: 0.75, y1: 0.80 };
+
+// pick thresholds
+const PICK_SAT_MIN = 0.08;
+const PICK_VAL_MIN = 0.12;
+const CONF_WARN = 0.35;
+
+// for craft sampling
+const CRAFT_SAMPLE_SIZE = 16; // pixels square in video coords
+const CRAFT_CONF_WARN = 0.25;
+
+/* =========================
+   DOM helpers
+========================= */
+const $ = (id) => document.getElementById(id);
+
+function showScreen(id){
+  for (const s of document.querySelectorAll(".screen")) s.classList.remove("active");
+  $(id).classList.add("active");
+}
+
+function showToast(message, type="ok", ms=2400){
+  const wrap = $("toastWrap");
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  wrap.appendChild(el);
+
+  setTimeout(() => {
+    el.style.opacity = "0";
+    el.style.transform = "translateY(6px)";
+    el.style.transition = "opacity 220ms ease, transform 220ms ease";
+  }, Math.max(120, ms - 220));
+
+  setTimeout(() => el.remove(), ms);
+}
+
+function normalizeHex(hex){
+  hex = (hex || "").trim().toLowerCase();
+  if(/^#[0-9a-f]{6}$/.test(hex)) return hex;
+  return "#ff0000";
+}
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+function hexToRgb(hex){
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
+  if(!m) return { r:255, g:0, b:0 };
+  return { r: parseInt(m[1],16), g: parseInt(m[2],16), b: parseInt(m[3],16) };
+}
+function rgbDist(a,b){
+  const dr=a.r-b.r, dg=a.g-b.g, db=a.b-b.b;
+  return Math.sqrt(dr*dr + dg*dg + db*db);
+}
+function rgbToHsv(r, g, b){
+  r/=255; g/=255; b/=255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  const d = max - min;
+  let h = 0;
+  if(d === 0) h = 0;
+  else if(max === r) h = ((g - b) / d) % 6;
+  else if(max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  h = Math.round(h * 60);
+  if(h < 0) h += 360;
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  return { h, s, v };
+}
+
+/* =========================
+   Screens: Start actions
+========================= */
+$("createRoomBtn").addEventListener("click", () => {
+  const name = ($("nameInput").value || "Host").trim();
+  socket.emit("room:create", { name });
+});
+$("joinRoomBtn").addEventListener("click", () => {
+  const name = ($("nameInput").value || "Player").trim();
+  const rid = ($("roomInput").value || "").trim();
+  if (!/^\d{4}$/.test(rid)) {
+    showToast("Enter a valid 4-digit room ID", "warn", 2000);
+    return;
+  }
+  socket.emit("room:join", { roomId: rid, name });
+});
+
+/* leave */
+$("leaveBtn").addEventListener("click", () => {
+  if (roomId) socket.emit("room:leave", { roomId });
+  cleanupCams();
+  roomId = null;
+  state = null;
+  showScreen("screenStart");
+});
+
+/* =========================
+   Server events
+========================= */
+socket.on("connect", () => {
+  myId = socket.id;
+});
+
+socket.on("room:error", ({ message }) => showToast(message || "Error", "warn", 2600));
+socket.on("game:toast", ({ type, message }) => showToast(message || "", type || "ok", 2000));
+
+socket.on("room:state", (snap) => {
+  state = snap;
+  roomId = snap.id;
+
+  // decide screen
+  if (snap.phase === "lobby") showScreen("screenLobby");
+  else if (snap.phase === "playing") showScreen("screenGame");
+  else if (snap.phase === "results") showScreen("screenResults");
+
+  renderAll();
+});
+
+/* =========================
+   Render functions
+========================= */
+function getMe(){
+  return state?.players?.[myId] || null;
+}
+function isHost(){
+  return state && state.hostId === myId;
+}
+function getHostName(){
+  const h = state?.players?.[state?.hostId];
+  return h ? h.name : "—";
+}
+
+function renderAll(){
+  if (!state) return;
+
+  // common
+  $("roomCodeText").textContent = state.id;
+  $("roomCodeText2").textContent = state.id;
+  $("roomCodeText3").textContent = state.id;
+
+  const me = getMe();
+  $("meNameText").textContent = me?.name || "—";
+  $("hostNameText").textContent = getHostName();
+
+  if (state.phase === "lobby") {
+    renderLobby();
+  } else if (state.phase === "playing") {
+    renderGame();
+  } else if (state.phase === "results") {
+    renderResults();
+  }
+}
+
+function renderLobby(){
+  // host controls enabled/disabled
+  const host = isHost();
+
+  const s = state.settings;
+
+  $("gameTypeSel").value = s.gameType;
+  $("modeSel").value = s.mode;
+  $("gameSecondsInp").value = s.gameSeconds;
+
+  $("damageInp").value = s.damagePerHit;
+  $("maxHpInp").value = s.maxHp;
+
+  $("initBulletsInp").value = s.initialBullets;
+  $("initShieldsInp").value = s.initialShields;
+  $("shieldDurInp").value = s.shieldDurationSec;
+  $("shieldCapInp").value = s.shieldCap;
+
+  $("limitedBox").style.display = (s.mode === "limited") ? "block" : "none";
+
+  for (const id of ["gameTypeSel","modeSel","gameSecondsInp","damageInp","maxHpInp","initBulletsInp","initShieldsInp","shieldDurInp","shieldCapInp","saveSettingsBtn","startGameBtn","assignPlayerSel","openCameraBtn","pickTorsoBtn","assignBtn"]) {
+    $(id).disabled = !host;
+  }
+
+  // populate assign dropdown with players
+  const sel = $("assignPlayerSel");
+  sel.innerHTML = "";
+  const ids = Object.keys(state.players);
+  ids.sort((a,b)=> state.players[a].name.localeCompare(state.players[b].name));
+  for (const pid of ids) {
+    const p = state.players[pid];
+    const opt = document.createElement("option");
+    opt.value = pid;
+    opt.textContent = `${p.name}${pid===state.hostId?" (Host)":""}`;
+    sel.appendChild(opt);
+  }
+
+  // start button state: must have 2+ and all assigned colors
+  const allAssigned = ids.length >= 2 && ids.every(pid => !!state.players[pid].assignedColorHex);
+  $("startGameBtn").disabled = !host || !allAssigned;
+
+  // show players list
+  const list = $("playersList");
+  list.innerHTML = "";
+  for (const pid of ids) {
+    const p = state.players[pid];
+
+    const row = document.createElement("div");
+    row.className = "prow";
+
+    const left = document.createElement("div");
+    left.className = "pL";
+
+    const sw = document.createElement("div");
+    sw.className = "sw";
+    sw.style.background = p.assignedColorHex ? p.assignedColorHex : "transparent";
+
+    const name = document.createElement("div");
+    name.className = "pname";
+    name.textContent = p.name + (pid===state.hostId ? " (Host)" : "");
+
+    const meta = document.createElement("div");
+    meta.className = "muted";
+    const t = (state.settings.gameType === "chaos") ? "Solo" : `Team ${p.team || "?"}`;
+    const conf = (p.assignedConfidence != null) ? `${Math.round(p.assignedConfidence*100)}%` : "—";
+    meta.textContent = `${t} • Color: ${p.assignedColorHex || "—"} • Conf: ${conf}`;
+
+    const wrap = document.createElement("div");
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.gap = "2px";
+    wrap.appendChild(name);
+    wrap.appendChild(meta);
+
+    left.appendChild(sw);
+    left.appendChild(wrap);
+
+    const right = document.createElement("div");
+    right.className = "badge";
+    right.textContent = (state.settings.gameType === "chaos") ? "CHAOS" : (p.team || "?");
+
+    row.appendChild(left);
+    row.appendChild(right);
+    list.appendChild(row);
+  }
+}
+
+function renderGame(){
+  const s = state.settings;
+  const me = getMe();
+  if (!me) return;
+
+  $("modeText").textContent = s.mode;
+  $("typeText").textContent = s.gameType;
+
+  // timer
+  const nowTs = Date.now();
+  const endAt = state.timer?.endAt || 0;
+  const leftMs = Math.max(0, endAt - nowTs);
+  const leftSec = Math.ceil(leftMs/1000);
+  $("timeLeftText").textContent = isFinite(leftSec) ? `${leftSec}s` : "—";
+
+  // hp
+  $("hpText").textContent = `${me.hp}`;
+  const hpPct = clamp(me.hp / (s.maxHp || 100), 0, 1);
+  $("hpFill").style.width = `${Math.round(hpPct*100)}%`;
+  $("hpFill").style.background = (hpPct > 0.5) ? "var(--ok)" : (hpPct > 0.25 ? "var(--warn)" : "var(--danger)");
+
+  // ammo/shield
+  $("bulletsText").textContent = (me.bullets === "INF" ? "∞" : me.bullets);
+  $("shieldsText").textContent = `${me.shields}`;
+  $("shieldActiveText").textContent = (me.shieldActiveUntil > Date.now()) ? `${Math.ceil((me.shieldActiveUntil-Date.now())/1000)}s` : "No";
+
+  const alive = !!me.alive;
+  $("shootBtn").disabled = !alive;
+  $("shieldBtn").disabled = !alive;
+
+  // limited actions
+  const isLimited = (s.mode === "limited");
+  $("limitedActions").style.display = isLimited ? "flex" : "none";
+  if (isLimited) {
+    $("earnBulletBtn").disabled = !alive;
+    $("earnShieldBtn").disabled = !alive;
+
+    if (me.earnTask) {
+      $("craftSwatch").style.background = me.earnTask.colorHex;
+      $("craftText").textContent = me.earnTask.type.toUpperCase();
+      $("craftConfText").textContent = "(aim & shoot color)";
+    } else {
+      $("craftSwatch").style.background = "transparent";
+      $("craftText").textContent = "—";
+      $("craftConfText").textContent = "";
+    }
+  }
+}
+
+function renderResults(){
+  const reason = state.timer?.reason || "—";
+  $("endReasonText").textContent = reason;
+
+  const win = computeWinnerClient();
+  $("winnerText").textContent = win;
+
+  const list = $("resultsList");
+  list.innerHTML = "";
+
+  const ids = Object.keys(state.players);
+  ids.sort((a,b)=> {
+    const A = state.players[a].stats?.kills||0;
+    const B = state.players[b].stats?.kills||0;
+    return B-A;
+  });
+
+  for (const pid of ids) {
+    const p = state.players[pid];
+    const row = document.createElement("div");
+    row.className = "prow";
+
+    const left = document.createElement("div");
+    left.className = "pL";
+
+    const sw = document.createElement("div");
+    sw.className = "sw";
+    sw.style.background = p.assignedColorHex || "transparent";
+
+    const nm = document.createElement("div");
+    nm.className = "pname";
+    nm.textContent = p.name + (pid===state.hostId?" (Host)":"") + (pid===myId?" (You)":"");
+
+    const meta = document.createElement("div");
+    meta.className = "muted";
+    meta.textContent = `Kills: ${p.stats.kills} • Hits: ${p.stats.hits} • Dmg: ${p.stats.damageDealt}`;
+
+    const wrap = document.createElement("div");
+    wrap.style.display="flex";
+    wrap.style.flexDirection="column";
+    wrap.style.gap="2px";
+    wrap.appendChild(nm);
+    wrap.appendChild(meta);
+
+    left.appendChild(sw);
+    left.appendChild(wrap);
+
+    const right = document.createElement("div");
+    right.className = "badge";
+    right.textContent = (state.settings.gameType === "chaos") ? "SOLO" : (p.team || "?");
+
+    row.appendChild(left);
+    row.appendChild(right);
+    list.appendChild(row);
+  }
+
+  // my hit log
+  const me = getMe();
+  const log = me?.stats?.hitLog || [];
+  if (!log.length) {
+    $("myHitLog").textContent = "No hits recorded.";
+  } else {
+    $("myHitLog").textContent = log.map(x => {
+      const t = new Date(x.t).toLocaleTimeString();
+      return `[${t}] Hit ${x.targetName} for ${x.dmg} (${x.shielded ? "SHIELDED" : "HP"})`;
+    }).join("\n");
+  }
+}
+
+function computeWinnerClient(){
+  if (!state) return "—";
+  const s = state.settings;
+  const players = Object.values(state.players);
+
+  if (s.gameType === "chaos") {
+    const sorted = players.slice().sort((a,b)=>{
+      if (b.stats.kills !== a.stats.kills) return b.stats.kills - a.stats.kills;
+      if (b.stats.damageDealt !== a.stats.damageDealt) return b.stats.damageDealt - a.stats.damageDealt;
+      return b.stats.hits - a.stats.hits;
+    });
+    const w = sorted[0];
+    return w ? `${w.name}` : "—";
+  } else {
+    const agg = { A:{k:0,d:0}, B:{k:0,d:0} };
+    for (const p of players) {
+      if (!p.team || !agg[p.team]) continue;
+      agg[p.team].k += p.stats.kills;
+      agg[p.team].d += p.stats.damageDealt;
+    }
+    let win = "A";
+    if (agg.B.k > agg.A.k) win="B";
+    else if (agg.B.k === agg.A.k && agg.B.d > agg.A.d) win="B";
+    return `Team ${win}`;
+  }
+}
+
+/* =========================
+   Lobby: settings save/start
+========================= */
+$("modeSel").addEventListener("change", () => {
+  $("limitedBox").style.display = ($("modeSel").value === "limited") ? "block" : "none";
+});
+
+$("saveSettingsBtn").addEventListener("click", () => {
+  if (!isHost()) return;
+  const settings = {
+    gameType: $("gameTypeSel").value,
+    mode: $("modeSel").value,
+    gameSeconds: Number($("gameSecondsInp").value),
+    damagePerHit: Number($("damageInp").value),
+    maxHp: Number($("maxHpInp").value),
+    initialBullets: Number($("initBulletsInp").value),
+    initialShields: Number($("initShieldsInp").value),
+    shieldDurationSec: Number($("shieldDurInp").value),
+    shieldCap: Number($("shieldCapInp").value),
+  };
+
+  // small client-side sanity
+  if (settings.damagePerHit > settings.maxHp) {
+    showToast("Damage per hit cannot exceed Max HP.", "warn", 2600);
+    return;
+  }
+
+  socket.emit("lobby:updateSettings", { roomId, settings });
+});
+
+$("startGameBtn").addEventListener("click", () => {
+  if (!isHost()) return;
+  socket.emit("game:start", { roomId });
+});
+
+$("backToLobbyBtn").addEventListener("click", () => {
+  // results -> lobby (server still in results phase; for MVP we just go lobby UI locally)
+  showScreen("screenLobby");
+});
+
+/* =========================
+   Camera + Detection utilities (shared)
+========================= */
+const sampleCanvas = document.createElement("canvas");
+const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+
+function pointInBbox(px, py, bbox){
+  const [x,y,w,h] = bbox;
+  return (px >= x && px <= x+w && py >= y && py <= y+h);
+}
+function bboxCenter(b){
+  const [x,y,w,h] = b;
+  return { x:x+w/2, y:y+h/2 };
+}
+function dist2(ax, ay, bx, by){
+  const dx=ax-bx, dy=ay-by;
+  return dx*dx+dy*dy;
+}
+function getCrosshairCssPoint(wrapEl){
+  const rect = wrapEl.getBoundingClientRect();
+  return { x: rect.width/2, y: rect.height/2 };
+}
+
+function mapBboxToCanvas(videoEl, wrapEl, bbox){
+  const [x,y,w,h] = bbox;
+  const vw = videoEl.videoWidth || 1;
+  const vh = videoEl.videoHeight || 1;
+  const rect = wrapEl.getBoundingClientRect();
+  const sx = rect.width / vw;
+  const sy = rect.height / vh;
+  return [x*sx, y*sy, w*sx, h*sy];
+}
+
+function chooseTarget(wrapEl, persons){
+  if (!persons.length) return null;
+  const {x:cx, y:cy} = getCrosshairCssPoint(wrapEl);
+
+  let overlap = persons.filter(p => pointInBbox(cx, cy, p.bboxCanvas));
+  const list = overlap.length ? overlap : persons;
+
+  let best=null, bestD=Infinity;
+  for (const p of list) {
+    const c = bboxCenter(p.bboxCanvas);
+    const d = dist2(c.x, c.y, cx, cy);
+    if (d < bestD) { bestD=d; best=p; }
+  }
+  return best;
+}
+
+function resizeCanvasToWrap(canvasEl, wrapEl, ctx){
+  const rect = wrapEl.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(rect.width * dpr);
+  const h = Math.round(rect.height * dpr);
+  if (canvasEl.width !== w || canvasEl.height !== h) {
+    canvasEl.width = w; canvasEl.height = h;
+  }
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.scale(dpr, dpr);
+}
+
+function drawOverlay(ctx, wrapEl, persons, target, facingMode, showTorsoRect=false){
+  const rect = wrapEl.getBoundingClientRect();
+  ctx.clearRect(0,0,rect.width,rect.height);
+
+  const isFront = (facingMode === "user");
+  if (isFront) {
+    ctx.save();
+    ctx.translate(rect.width, 0);
+    ctx.scale(-1, 1);
+  }
+
+  for (const p of persons) {
+    const [x,y,w,h] = p.bboxCanvas;
+    const isT = (target && p === target);
+    ctx.strokeStyle = isT ? "#00ffff" : "#00ff00";
+    ctx.lineWidth = isT ? 4 : 3;
+    ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle = isT ? "#00ffff" : "#00ff00";
+    ctx.font = "14px Arial";
+    ctx.fillText(isT ? "TARGET" : "Person", x, y>16 ? y-4 : 16);
+  }
+
+  // ring
+  const {x:cx, y:cy} = getCrosshairCssPoint(wrapEl);
+  ctx.beginPath();
+  ctx.arc(cx, cy, 18, 0, Math.PI*2);
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // torso debug rect
+  if (showTorsoRect && target) {
+    const t = getTorsoRectCss(target);
+    if (t) {
+      ctx.fillStyle = "rgba(255,214,10,0.12)";
+      ctx.strokeStyle = "rgba(255,214,10,0.95)";
+      ctx.lineWidth = 2;
+      ctx.fillRect(t.x, t.y, t.w, t.h);
+      ctx.strokeRect(t.x, t.y, t.w, t.h);
+      ctx.font="12px Arial";
+      ctx.fillStyle="rgba(255,214,10,0.95)";
+      ctx.fillText("sample", t.x+4, t.y+14);
+    }
+  }
+
+  if (isFront) ctx.restore();
+}
+
+function getTorsoRectCss(target){
+  if(!target) return null;
+  let [x,y,w,h] = target.bboxCanvas;
+  const rx0 = x + w*REGION.x0;
+  const ry0 = y + h*REGION.y0;
+  const rx1 = x + w*REGION.x1;
+  const ry1 = y + h*REGION.y1;
+  return { x: rx0, y: ry0, w: (rx1-rx0), h: (ry1-ry0) };
+}
+
+function getTargetRegionInVideoPixels(videoEl, wrapEl, target, facingMode){
+  const rect = wrapEl.getBoundingClientRect();
+  const vw = videoEl.videoWidth || 1;
+  const vh = videoEl.videoHeight || 1;
+
+  const sx = vw / rect.width;
+  const sy = vh / rect.height;
+
+  let [xCss, yCss, wCss, hCss] = target.bboxCanvas;
+
+  // mirror correction if front
+  if (facingMode === "user") {
+    xCss = rect.width - (xCss + wCss);
+  }
+
+  const rx0 = xCss + wCss * REGION.x0;
+  const ry0 = yCss + hCss * REGION.y0;
+  const rx1 = xCss + wCss * REGION.x1;
+  const ry1 = yCss + hCss * REGION.y1;
+
+  const x = Math.round(rx0 * sx);
+  const y = Math.round(ry0 * sy);
+  const w = Math.round((rx1-rx0) * sx);
+  const h = Math.round((ry1-ry0) * sy);
+
+  const cx = clamp(x, 0, vw-1);
+  const cy = clamp(y, 0, vh-1);
+  const cw = clamp(w, 1, vw - cx);
+  const ch = clamp(h, 1, vh - cy);
+
+  return { x: cx, y: cy, w: cw, h: ch };
+}
+
+/* =========================
+   COLOR PICK (fixed - representative RGB from dominant hue bin)
+========================= */
+function pickDominantTargetColor(videoEl, wrapEl, target, facingMode){
+  if(!target) return null;
+
+  const { x, y, w, h } = getTargetRegionInVideoPixels(videoEl, wrapEl, target, facingMode);
+
+  const SAMPLE_W = 96, SAMPLE_H = 96;
+  sampleCanvas.width = SAMPLE_W;
+  sampleCanvas.height = SAMPLE_H;
+  sampleCtx.drawImage(videoEl, x, y, w, h, 0, 0, SAMPLE_W, SAMPLE_H);
+
+  const img = sampleCtx.getImageData(0,0,SAMPLE_W,SAMPLE_H);
+  const data = img.data;
+
+  const bins = 36, binSize = 360/bins;
+  const hist = new Array(bins).fill(0);
+
+  let considered=0, totalWeight=0;
+  let lowSatOrValCount=0, totalSeen=0;
+
+  const step=2;
+
+  // pass1 histogram
+  for(let yy=0; yy<SAMPLE_H; yy+=step){
+    for(let xx=0; xx<SAMPLE_W; xx+=step){
+      const i=(yy*SAMPLE_W+xx)*4;
+      const r=data[i], g=data[i+1], b=data[i+2];
+      const { h:hh, s, v } = rgbToHsv(r,g,b);
+
+      totalSeen++;
+      if (s < PICK_SAT_MIN || v < PICK_VAL_MIN) { lowSatOrValCount++; continue; }
+
+      const weight = (s*0.85 + v*0.15);
+      const bin = Math.floor(hh/binSize) % bins;
+      hist[bin] += weight;
+      totalWeight += weight;
+      considered++;
+    }
+  }
+
+  const lowQuality = (totalSeen>0) && ((lowSatOrValCount/totalSeen) > 0.65);
+
+  // fallback avg rgb
+  function fallbackAvgRgb(){
+    let sumR=0,sumG=0,sumB=0,n=0;
+    for(let yy=0; yy<SAMPLE_H; yy+=step){
+      for(let xx=0; xx<SAMPLE_W; xx+=step){
+        const i=(yy*SAMPLE_W+xx)*4;
+        const r=data[i], g=data[i+1], b=data[i+2];
+        const { v } = rgbToHsv(r,g,b);
+        if (v < 0.10) continue;
+        sumR+=r; sumG+=g; sumB+=b; n++;
+      }
+    }
+    if (n<20) return null;
+    const R=Math.round(sumR/n), G=Math.round(sumG/n), B=Math.round(sumB/n);
+    const hsv=rgbToHsv(R,G,B);
+    return { hex: rgbToHex(R,G,B), rgb:{r:R,g:G,b:B}, confidence:0.22, usedFallback:true, lowQuality:true, hue:hsv.h };
+  }
+
+  if (considered < 25 || totalWeight <= 0) return fallbackAvgRgb();
+
+  let bestBin=0;
+  for(let i=1;i<bins;i++) if(hist[i]>hist[bestBin]) bestBin=i;
+
+  const confidence = hist[bestBin]/totalWeight;
+  const dominantHue = (bestBin+0.5)*binSize;
+
+  const hueMin=bestBin*binSize, hueMax=hueMin+binSize;
+
+  let sumR=0,sumG=0,sumB=0,n=0;
+
+  for(let yy=0; yy<SAMPLE_H; yy+=step){
+    for(let xx=0; xx<SAMPLE_W; xx+=step){
+      const i=(yy*SAMPLE_W+xx)*4;
+      const r=data[i], g=data[i+1], b=data[i+2];
+      const { h:hh, s, v } = rgbToHsv(r,g,b);
+      if (s < PICK_SAT_MIN || v < PICK_VAL_MIN) continue;
+
+      let inBin=false;
+      if (hueMax <= 360) inBin = (hh >= hueMin && hh < hueMax);
+      else inBin = (hh >= hueMin || hh < (hueMax-360));
+      if (!inBin) continue;
+
+      sumR+=r; sumG+=g; sumB+=b; n++;
+    }
+  }
+
+  if (n<20) return fallbackAvgRgb();
+
+  const R=Math.round(sumR/n), G=Math.round(sumG/n), B=Math.round(sumB/n);
+  return { hex: rgbToHex(R,G,B), rgb:{r:R,g:G,b:B}, confidence, usedFallback:false, lowQuality, hue: dominantHue };
+}
+
+function rgbToHex(r,g,b){
+  const to2 = (n)=> n.toString(16).padStart(2,"0");
+  return `#${to2(r)}${to2(g)}${to2(b)}`;
+}
+
+/* =========================
+   Crosshair sampling for crafting
+========================= */
+function sampleCrosshairColor(videoEl, wrapEl, facingMode){
+  const rect = wrapEl.getBoundingClientRect();
+  const vw = videoEl.videoWidth || 1;
+  const vh = videoEl.videoHeight || 1;
+
+  const { x:cxCss, y:cyCss } = getCrosshairCssPoint(wrapEl);
+
+  // map css -> video px
+  const sx = vw / rect.width;
+  const sy = vh / rect.height;
+
+  // mirror correction for front camera
+  const cxAdj = (facingMode === "user") ? (rect.width - cxCss) : cxCss;
+
+  const cx = Math.round(cxAdj * sx);
+  const cy = Math.round(cyCss * sy);
+
+  const half = Math.floor(CRAFT_SAMPLE_SIZE / 2);
+  const x0 = clamp(cx - half, 0, vw-1);
+  const y0 = clamp(cy - half, 0, vh-1);
+  const w = clamp(CRAFT_SAMPLE_SIZE, 1, vw - x0);
+  const h = clamp(CRAFT_SAMPLE_SIZE, 1, vh - y0);
+
+  const OUT = 32;
+  sampleCanvas.width = OUT;
+  sampleCanvas.height = OUT;
+  sampleCtx.drawImage(videoEl, x0, y0, w, h, 0, 0, OUT, OUT);
+  const img = sampleCtx.getImageData(0,0,OUT,OUT);
+  const data = img.data;
+
+  let sumR=0,sumG=0,sumB=0,n=0;
+  let satSum=0,valSum=0;
+
+  for(let i=0;i<data.length;i+=4){
+    const r=data[i], g=data[i+1], b=data[i+2];
+    const hsv=rgbToHsv(r,g,b);
+    sumR+=r; sumG+=g; sumB+=b; n++;
+    satSum+=hsv.s;
+    valSum+=hsv.v;
+  }
+  if (!n) return null;
+
+  const R=Math.round(sumR/n), G=Math.round(sumG/n), B=Math.round(sumB/n);
+  const satMean = satSum/n;
+  const valMean = valSum/n;
+
+  // confidence heuristic: brighter + more saturated => better confidence
+  const conf = clamp((satMean*0.65 + valMean*0.35), 0, 1);
+
+  return { hex: rgbToHex(R,G,B), rgb:{r:R,g:G,b:B}, confidence: conf };
+}
+
+/* =========================
+   Lobby camera logic (host)
+========================= */
+async function ensureModel(){
+  if (model) return;
+  showToast("Loading model…", "ok", 1200);
+  model = await cocoSsd.load();
+}
+
+async function startLobbyCam(){
+  await ensureModel();
+
+  const wrap = $("lobbyCamWrap");
+  const videoEl = $("video");
+  const canvasEl = $("canvas");
+  const ctx = canvasEl.getContext("2d", { alpha:true });
+
+  if (stream1) return;
+
+  stream1 = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode1 }});
+  videoEl.srcObject = stream1;
+  videoEl.style.transform = (facingMode1 === "user") ? "scaleX(-1)" : "scaleX(1)";
+  await new Promise(res => videoEl.onloadedmetadata = () => { videoEl.play(); res(); });
+
+  wrap.style.display = "block";
+
+  function loop(){
+    if (!stream1) return;
+
+    resizeCanvasToWrap(canvasEl, wrap, ctx);
+
+    const due = (performance.now() - lastDetectT1) >= DETECT_INTERVAL;
+
+    if (due && !isDetecting1) {
+      isDetecting1 = true;
+      lastDetectT1 = performance.now();
+      model.detect(videoEl).then(preds => {
+        const persons = preds
+          .filter(p => p.class === "person" && (p.score ?? 0) >= PERSON_SCORE_MIN)
+          .map(p => ({ ...p, bboxCanvas: mapBboxToCanvas(videoEl, wrap, p.bbox) }));
+        lastPersons1 = persons;
+        lastTarget1 = chooseTarget(wrap, persons);
+      }).catch(()=>{}).finally(()=>{ isDetecting1=false; });
+    }
+
+    drawOverlay(ctx, wrap, lastPersons1, lastTarget1, facingMode1, true);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+function stopLobbyCam(){
+  const wrap = $("lobbyCamWrap");
+  wrap.style.display = "none";
+  if (stream1){
+    stream1.getTracks().forEach(t=>t.stop());
+    stream1 = null;
+  }
+  lastPersons1 = [];
+  lastTarget1 = null;
+}
+
+/* lobby cam buttons */
+$("openCameraBtn").addEventListener("click", async () => {
+  if (!isHost()) return;
+  try{
+    await startLobbyCam();
+    $("pickTorsoBtn").disabled = false;
+  }catch(e){
+    showToast("Camera failed (need HTTPS on mobile).", "warn", 2800);
+  }
+});
+$("closeCamBtn").addEventListener("click", () => {
+  stopLobbyCam();
+  $("pickTorsoBtn").disabled = true;
+});
+$("switchBtn").addEventListener("click", async () => {
+  if (!stream1) return;
+  stopLobbyCam();
+  facingMode1 = (facingMode1 === "environment") ? "user" : "environment";
+  await startLobbyCam();
+});
+
+/* host picks torso color */
+let lastPicked = null;
+
+$("pickTorsoBtn").addEventListener("click", () => {
+  if (!isHost()) return;
+  if (!stream1 || !lastTarget1) {
+    showToast("No target detected. Keep a person in frame.", "warn", 2200);
+    return;
+  }
+  const picked = pickDominantTargetColor($("video"), $("lobbyCamWrap"), lastTarget1, facingMode1);
+  if (!picked) {
+    showToast("Could not read color. Try better lighting / closer.", "warn", 2600);
+    return;
+  }
+  lastPicked = picked;
+
+  $("pickedSwatch").style.background = picked.hex;
+  $("pickedInfo").textContent = `${picked.hex} • Conf ${Math.round(picked.confidence*100)}%`;
+  $("assignBtn").disabled = false;
+
+  if (picked.confidence < CONF_WARN || picked.usedFallback || picked.lowQuality) {
+    showToast("Low confidence pick. Recommend high-saturated uniforms + good lighting.", "warn", 3200);
+  }
+});
+
+$("assignBtn").addEventListener("click", () => {
+  if (!isHost()) return;
+  if (!lastPicked) return;
+  const pid = $("assignPlayerSel").value;
+  socket.emit("lobby:assignColor", { roomId, playerId: pid, colorHex: lastPicked.hex, confidence: lastPicked.confidence });
+  showToast("Assigned!", "ok", 1200);
+});
+
+/* =========================
+   Game camera + detection
+========================= */
+async function startGameCam(){
+  await ensureModel();
+
+  const wrap = $("gameCamWrap");
+  const videoEl = $("video2");
+  const canvasEl = $("canvas2");
+  const ctx = canvasEl.getContext("2d", { alpha:true });
+
+  if (stream2) return;
+
+  stream2 = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode2 }});
+  videoEl.srcObject = stream2;
+  videoEl.style.transform = (facingMode2 === "user") ? "scaleX(-1)" : "scaleX(1)";
+  await new Promise(res => videoEl.onloadedmetadata = () => { videoEl.play(); res(); });
+
+  function loop(){
+    if (!stream2) return;
+
+    resizeCanvasToWrap(canvasEl, wrap, ctx);
+
+    const due = (performance.now() - lastDetectT2) >= DETECT_INTERVAL;
+
+    if (due && !isDetecting2) {
+      isDetecting2 = true;
+      lastDetectT2 = performance.now();
+      model.detect(videoEl).then(preds => {
+        const persons = preds
+          .filter(p => p.class === "person" && (p.score ?? 0) >= PERSON_SCORE_MIN)
+          .map(p => ({ ...p, bboxCanvas: mapBboxToCanvas(videoEl, wrap, p.bbox) }));
+        lastPersons2 = persons;
+        lastTarget2 = chooseTarget(wrap, persons);
+      }).catch(()=>{}).finally(()=>{ isDetecting2=false; });
+    }
+
+    drawOverlay(ctx, wrap, lastPersons2, lastTarget2, facingMode2, false);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+function stopGameCam(){
+  if (stream2){
+    stream2.getTracks().forEach(t=>t.stop());
+    stream2 = null;
+  }
+  lastPersons2 = [];
+  lastTarget2 = null;
+}
+
+$("switchBtn2").addEventListener("click", async () => {
+  if (!stream2) return;
+  stopGameCam();
+  facingMode2 = (facingMode2 === "environment") ? "user" : "environment";
+  await startGameCam();
+});
+
+function cleanupCams(){
+  stopLobbyCam();
+  stopGameCam();
+}
+
+/* =========================
+   Game actions
+========================= */
+$("shootBtn").addEventListener("click", () => {
+  if (!state || state.phase !== "playing") return;
+  const me = getMe();
+  if (!me || !me.alive) return;
+
+  const s = state.settings;
+  const limited = (s.mode === "limited");
+
+  // If limited & earnTask active -> treat shoot as EARN attempt (crosshair sample)
+  if (limited && me.earnTask) {
+    const cross = sampleCrosshairColor($("video2"), $("gameCamWrap"), facingMode2);
+    if (!cross) {
+      showToast("No color sample.", "warn", 1800);
+      return;
+    }
+    $("confText").textContent = `${Math.round(cross.confidence*100)}%`;
+    $("statusText").textContent = "Earn attempt…";
+
+    if (cross.confidence < CRAFT_CONF_WARN) {
+      showToast("Low confidence sample. Get closer / better lighting.", "warn", 2200);
+      return;
+    }
+    socket.emit("game:shoot", {
+      roomId,
+      shootType: "earn",
+      hasTarget: false,
+      crossObs: { rgb: cross.rgb, confidence: cross.confidence },
+      torsoObs: null
+    });
+    return;
+  }
+
+  // Attack shot requires target in crosshair bbox
+  const wrap = $("gameCamWrap");
+  const { x:cx, y:cy } = getCrosshairCssPoint(wrap);
+
+  // if front camera, overlay is mirrored; we check with corrected px
+  const rect = wrap.getBoundingClientRect();
+  const px = (facingMode2 === "user") ? (rect.width - cx) : cx;
+
+  const hasTarget = !!(lastTarget2 && pointInBbox(px, cy, lastTarget2.bboxCanvas));
+
+  if (!hasTarget) {
+    $("statusText").textContent = "MISS";
+    $("confText").textContent = "—";
+    showToast("MISS (no target)", "warn", 1400);
+    socket.emit("game:shoot", { roomId, shootType: "attack", hasTarget: false });
+    return;
+  }
+
+  // torso pick observation
+  const picked = pickDominantTargetColor($("video2"), $("gameCamWrap"), lastTarget2, facingMode2);
+  if (!picked) {
+    showToast("Could not read target uniform color.", "warn", 1800);
+    socket.emit("game:shoot", { roomId, shootType: "attack", hasTarget: true, torsoObs: null });
+    return;
+  }
+
+  $("statusText").textContent = "SHOT";
+  $("confText").textContent = `${Math.round(picked.confidence*100)}%`;
+
+  if (picked.confidence < CONF_WARN || picked.usedFallback || picked.lowQuality) {
+    showToast("Low confidence target sample (lighting/uniform).", "warn", 2400);
+  }
+
+  socket.emit("game:shoot", {
+    roomId,
+    shootType: "attack",
+    hasTarget: true,
+    torsoObs: { rgb: picked.rgb, confidence: picked.confidence },
+    crossObs: null
+  });
+});
+
+$("shieldBtn").addEventListener("click", () => {
+  if (!state || state.phase !== "playing") return;
+  const me = getMe();
+  if (!me || !me.alive) return;
+  socket.emit("game:shieldActivate", { roomId });
+});
+
+$("earnBulletBtn").addEventListener("click", () => {
+  if (!state || state.phase !== "playing") return;
+  socket.emit("game:earnStart", { roomId, type: "bullet" });
+});
+
+$("earnShieldBtn").addEventListener("click", () => {
+  if (!state || state.phase !== "playing") return;
+  socket.emit("game:earnStart", { roomId, type: "shield" });
+});
+
+/* =========================
+   Start game cam when entering game screen
+========================= */
+let gameCamStarted = false;
+const observer = new MutationObserver(async () => {
+  const gameActive = $("screenGame").classList.contains("active");
+  if (gameActive && !gameCamStarted) {
+    gameCamStarted = true;
+    try{
+      await startGameCam();
+      showToast("Camera ready.", "ok", 1200);
+    }catch(e){
+      showToast("Camera failed (need HTTPS on mobile).", "warn", 2800);
+    }
+  }
+  if (!gameActive && gameCamStarted) {
+    // keep running unless you want to stop; MVP keeps it
+  }
+});
+observer.observe(document.body, { attributes:true, subtree:true, attributeFilter:["class"] });
+
+/* If we land in lobby, ensure game cam is off */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    // optional: stop cams when hidden
+  }
+});
+
+/* =========================
+   Boot
+========================= */
+(async function boot(){
+  $("statusText").textContent = "Idle";
+  $("confText").textContent = "—";
+})();
+</script>
+</body>
+</html>

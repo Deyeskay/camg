@@ -223,8 +223,54 @@
   .bigBtn.danger{ background:var(--danger); }
   .bigBtn.gray{ background:var(--btn); }
 
-  .resultRow{
-    display:flex; flex-direction:column; gap:8px;
+  /* Modal */
+  .modalBackdrop{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.55);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:250;
+    padding:16px;
+    box-sizing:border-box;
+  }
+  .modal{
+    width:min(560px, 96vw);
+    background:var(--bg);
+    border:1px solid var(--stroke);
+    border-radius:16px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.45);
+    overflow:hidden;
+  }
+  .modalHeader{
+    padding:12px 14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+  }
+  .modalHeader b{ font-size:15px; }
+  .iconBtn{
+    width:34px;
+    height:34px;
+    border-radius:10px;
+    border:none;
+    background:rgba(255,255,255,0.10);
+    color:white;
+    cursor:pointer;
+    font-size:18px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .modalBody{ padding:12px 14px; }
+
+  .clickRow{
+    cursor:pointer;
+  }
+  .clickRow:hover{
+    background:rgba(255,255,255,0.08);
   }
 
   /* Toast */
@@ -416,6 +462,17 @@
         <div class="pill">Type: <b id="typeText">—</b></div>
       </div>
 
+      <!-- NEW: target selection row -->
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="pickTargetBtn">👥 Select Bullets</button>
+        <div class="pill" title="Who your bullets are targeting right now">
+          Target:
+          <span class="sw" id="activeTargetSw" style="background:transparent;"></span>
+          <b id="activeTargetText">None</b>
+          <span class="muted" id="activeTargetMeta"></span>
+        </div>
+      </div>
+
       <div class="row" style="margin-top:10px;">
         <div class="pill">HP:
           <div class="hpbar"><div class="hpfill" id="hpFill"></div></div>
@@ -489,6 +546,25 @@
 
 </div>
 
+<!-- Target picker modal (NEW) -->
+<div class="modalBackdrop" id="targetModal">
+  <div class="modal">
+    <div class="modalHeader">
+      <b>Select Bullet Target</b>
+      <button class="iconBtn" id="closeTargetModal" title="Close">✕</button>
+    </div>
+    <div class="modalBody">
+      <div class="muted" id="targetHelp" style="margin-bottom:10px;">
+        Team mode: only opponents shown. Chaos: anyone except you.
+      </div>
+      <div class="plist" id="targetList"></div>
+      <div class="muted" id="targetEmpty" style="display:none;">
+        No valid targets yet. Ensure players joined and host assigned colors.
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toastWrap"></div>
 
 <script>
@@ -535,6 +611,9 @@ const CONF_WARN = 0.35;
 const CRAFT_SAMPLE_SIZE = 16; // pixels square in video coords
 const CRAFT_CONF_WARN = 0.25;
 
+// NEW: active bullet target selection
+let activeTargetId = null;
+
 /* =========================
    DOM helpers
 ========================= */
@@ -573,10 +652,6 @@ function hexToRgb(hex){
   if(!m) return { r:255, g:0, b:0 };
   return { r: parseInt(m[1],16), g: parseInt(m[2],16), b: parseInt(m[3],16) };
 }
-function rgbDist(a,b){
-  const dr=a.r-b.r, dg=a.g-b.g, db=a.b-b.b;
-  return Math.sqrt(dr*dr + dg*dg + db*db);
-}
 function rgbToHsv(r, g, b){
   r/=255; g/=255; b/=255;
   const max = Math.max(r,g,b), min = Math.min(r,g,b);
@@ -591,6 +666,10 @@ function rgbToHsv(r, g, b){
   const s = max === 0 ? 0 : d / max;
   const v = max;
   return { h, s, v };
+}
+function rgbToHex(r,g,b){
+  const to2 = (n)=> n.toString(16).padStart(2,"0");
+  return `#${to2(r)}${to2(g)}${to2(b)}`;
 }
 
 /* =========================
@@ -616,6 +695,7 @@ $("leaveBtn").addEventListener("click", () => {
   cleanupCams();
   roomId = null;
   state = null;
+  activeTargetId = null;
   showScreen("screenStart");
 });
 
@@ -637,6 +717,9 @@ socket.on("room:state", (snap) => {
   if (snap.phase === "lobby") showScreen("screenLobby");
   else if (snap.phase === "playing") showScreen("screenGame");
   else if (snap.phase === "results") showScreen("screenResults");
+
+  // if our selected target left / invalid, clear it
+  validateActiveTarget();
 
   renderAll();
 });
@@ -763,6 +846,62 @@ function renderLobby(){
   }
 }
 
+function validateActiveTarget(){
+  if (!state || !activeTargetId) return;
+  if (!state.players?.[activeTargetId]) {
+    activeTargetId = null;
+    return;
+  }
+  if (activeTargetId === myId) activeTargetId = null;
+
+  // In team mode, disallow selecting same team
+  const s = state.settings;
+  const me = getMe();
+  const tgt = state.players[activeTargetId];
+  if (!me || !tgt) return;
+
+  if (s.gameType === "team" && me.team && tgt.team && me.team === tgt.team) {
+    activeTargetId = null;
+  }
+}
+
+function renderActiveTargetUI(){
+  const sw = $("activeTargetSw");
+  const tx = $("activeTargetText");
+  const meta = $("activeTargetMeta");
+
+  if (!state) {
+    sw.style.background = "transparent";
+    tx.textContent = "None";
+    meta.textContent = "";
+    return;
+  }
+
+  const me = getMe();
+  const s = state.settings;
+
+  if (!activeTargetId || !state.players[activeTargetId]) {
+    sw.style.background = "transparent";
+    tx.textContent = "None";
+    meta.textContent = s.gameType === "team" ? "(pick an opponent)" : "(pick a player)";
+    return;
+  }
+
+  const tgt = state.players[activeTargetId];
+  sw.style.background = tgt.assignedColorHex || "transparent";
+  tx.textContent = tgt.name;
+
+  let extra = "";
+  if (s.gameType === "team") extra = `• Team ${tgt.team || "?"}`;
+  if (tgt.alive === false) extra += (extra ? " " : "") + "• DEAD";
+
+  // warn if color confidence low
+  const conf = (tgt.assignedConfidence != null) ? Math.round(tgt.assignedConfidence*100) : null;
+  if (conf != null && conf < 35) extra += (extra ? " " : "") + `• LowConf ${conf}%`;
+
+  meta.textContent = extra ? `(${extra})` : "";
+}
+
 function renderGame(){
   const s = state.settings;
   const me = getMe();
@@ -810,6 +949,8 @@ function renderGame(){
       $("craftConfText").textContent = "";
     }
   }
+
+  renderActiveTargetUI();
 }
 
 function renderResults(){
@@ -929,7 +1070,6 @@ $("saveSettingsBtn").addEventListener("click", () => {
     shieldCap: Number($("shieldCapInp").value),
   };
 
-  // small client-side sanity
   if (settings.damagePerHit > settings.maxHp) {
     showToast("Damage per hit cannot exceed Max HP.", "warn", 2600);
     return;
@@ -944,7 +1084,6 @@ $("startGameBtn").addEventListener("click", () => {
 });
 
 $("backToLobbyBtn").addEventListener("click", () => {
-  // results -> lobby (server still in results phase; for MVP we just go lobby UI locally)
   showScreen("screenLobby");
 });
 
@@ -974,10 +1113,9 @@ function getCrosshairCssPoint(wrapEl){
 function mapBboxToCanvas(videoEl, wrapEl, bbox){
   const [x,y,w,h] = bbox;
   const vw = videoEl.videoWidth || 1;
-  const vh = videoEl.videoHeight || 1;
   const rect = wrapEl.getBoundingClientRect();
   const sx = rect.width / vw;
-  const sy = rect.height / vh;
+  const sy = rect.height / (videoEl.videoHeight || 1);
   return [x*sx, y*sy, w*sx, h*sy];
 }
 
@@ -1009,6 +1147,16 @@ function resizeCanvasToWrap(canvasEl, wrapEl, ctx){
   ctx.scale(dpr, dpr);
 }
 
+function getTorsoRectCss(target){
+  if(!target) return null;
+  let [x,y,w,h] = target.bboxCanvas;
+  const rx0 = x + w*REGION.x0;
+  const ry0 = y + h*REGION.y0;
+  const rx1 = x + w*REGION.x1;
+  const ry1 = y + h*REGION.y1;
+  return { x: rx0, y: ry0, w: (rx1-rx0), h: (ry1-ry0) };
+}
+
 function drawOverlay(ctx, wrapEl, persons, target, facingMode, showTorsoRect=false){
   const rect = wrapEl.getBoundingClientRect();
   ctx.clearRect(0,0,rect.width,rect.height);
@@ -1031,7 +1179,6 @@ function drawOverlay(ctx, wrapEl, persons, target, facingMode, showTorsoRect=fal
     ctx.fillText(isT ? "TARGET" : "Person", x, y>16 ? y-4 : 16);
   }
 
-  // ring
   const {x:cx, y:cy} = getCrosshairCssPoint(wrapEl);
   ctx.beginPath();
   ctx.arc(cx, cy, 18, 0, Math.PI*2);
@@ -1039,7 +1186,6 @@ function drawOverlay(ctx, wrapEl, persons, target, facingMode, showTorsoRect=fal
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // torso debug rect
   if (showTorsoRect && target) {
     const t = getTorsoRectCss(target);
     if (t) {
@@ -1057,16 +1203,6 @@ function drawOverlay(ctx, wrapEl, persons, target, facingMode, showTorsoRect=fal
   if (isFront) ctx.restore();
 }
 
-function getTorsoRectCss(target){
-  if(!target) return null;
-  let [x,y,w,h] = target.bboxCanvas;
-  const rx0 = x + w*REGION.x0;
-  const ry0 = y + h*REGION.y0;
-  const rx1 = x + w*REGION.x1;
-  const ry1 = y + h*REGION.y1;
-  return { x: rx0, y: ry0, w: (rx1-rx0), h: (ry1-ry0) };
-}
-
 function getTargetRegionInVideoPixels(videoEl, wrapEl, target, facingMode){
   const rect = wrapEl.getBoundingClientRect();
   const vw = videoEl.videoWidth || 1;
@@ -1077,7 +1213,6 @@ function getTargetRegionInVideoPixels(videoEl, wrapEl, target, facingMode){
 
   let [xCss, yCss, wCss, hCss] = target.bboxCanvas;
 
-  // mirror correction if front
   if (facingMode === "user") {
     xCss = rect.width - (xCss + wCss);
   }
@@ -1101,7 +1236,7 @@ function getTargetRegionInVideoPixels(videoEl, wrapEl, target, facingMode){
 }
 
 /* =========================
-   COLOR PICK (fixed - representative RGB from dominant hue bin)
+   COLOR PICK (representative RGB from dominant hue bin)
 ========================= */
 function pickDominantTargetColor(videoEl, wrapEl, target, facingMode){
   if(!target) return null;
@@ -1124,7 +1259,6 @@ function pickDominantTargetColor(videoEl, wrapEl, target, facingMode){
 
   const step=2;
 
-  // pass1 histogram
   for(let yy=0; yy<SAMPLE_H; yy+=step){
     for(let xx=0; xx<SAMPLE_W; xx+=step){
       const i=(yy*SAMPLE_W+xx)*4;
@@ -1144,7 +1278,6 @@ function pickDominantTargetColor(videoEl, wrapEl, target, facingMode){
 
   const lowQuality = (totalSeen>0) && ((lowSatOrValCount/totalSeen) > 0.65);
 
-  // fallback avg rgb
   function fallbackAvgRgb(){
     let sumR=0,sumG=0,sumB=0,n=0;
     for(let yy=0; yy<SAMPLE_H; yy+=step){
@@ -1196,11 +1329,6 @@ function pickDominantTargetColor(videoEl, wrapEl, target, facingMode){
   return { hex: rgbToHex(R,G,B), rgb:{r:R,g:G,b:B}, confidence, usedFallback:false, lowQuality, hue: dominantHue };
 }
 
-function rgbToHex(r,g,b){
-  const to2 = (n)=> n.toString(16).padStart(2,"0");
-  return `#${to2(r)}${to2(g)}${to2(b)}`;
-}
-
 /* =========================
    Crosshair sampling for crafting
 ========================= */
@@ -1211,11 +1339,9 @@ function sampleCrosshairColor(videoEl, wrapEl, facingMode){
 
   const { x:cxCss, y:cyCss } = getCrosshairCssPoint(wrapEl);
 
-  // map css -> video px
   const sx = vw / rect.width;
   const sy = vh / rect.height;
 
-  // mirror correction for front camera
   const cxAdj = (facingMode === "user") ? (rect.width - cxCss) : cxCss;
 
   const cx = Math.round(cxAdj * sx);
@@ -1250,7 +1376,6 @@ function sampleCrosshairColor(videoEl, wrapEl, facingMode){
   const satMean = satSum/n;
   const valMean = valSum/n;
 
-  // confidence heuristic: brighter + more saturated => better confidence
   const conf = clamp((satMean*0.65 + valMean*0.35), 0, 1);
 
   return { hex: rgbToHex(R,G,B), rgb:{r:R,g:G,b:B}, confidence: conf };
@@ -1318,7 +1443,6 @@ function stopLobbyCam(){
   lastTarget1 = null;
 }
 
-/* lobby cam buttons */
 $("openCameraBtn").addEventListener("click", async () => {
   if (!isHost()) return;
   try{
@@ -1339,7 +1463,6 @@ $("switchBtn").addEventListener("click", async () => {
   await startLobbyCam();
 });
 
-/* host picks torso color */
 let lastPicked = null;
 
 $("pickTorsoBtn").addEventListener("click", () => {
@@ -1437,6 +1560,121 @@ function cleanupCams(){
 }
 
 /* =========================
+   NEW: Target picker modal
+========================= */
+function openTargetModal(){
+  renderTargetList();
+  $("targetModal").style.display = "flex";
+}
+function closeTargetModal(){
+  $("targetModal").style.display = "none";
+}
+$("pickTargetBtn").addEventListener("click", () => {
+  if (!state || state.phase !== "playing") return;
+  openTargetModal();
+});
+$("closeTargetModal").addEventListener("click", closeTargetModal);
+$("targetModal").addEventListener("click", (e) => {
+  if (e.target === $("targetModal")) closeTargetModal();
+});
+
+function getValidTargetIds(){
+  if (!state) return [];
+  const me = getMe();
+  if (!me) return [];
+
+  const s = state.settings;
+  const ids = Object.keys(state.players).filter(pid => pid !== myId);
+
+  // must have assigned color
+  const assigned = ids.filter(pid => !!state.players[pid].assignedColorHex);
+
+  if (s.gameType === "chaos") return assigned;
+
+  // team mode: only opponents
+  return assigned.filter(pid => {
+    const p = state.players[pid];
+    return me.team && p.team && me.team !== p.team;
+  });
+}
+
+function renderTargetList(){
+  const list = $("targetList");
+  const empty = $("targetEmpty");
+  list.innerHTML = "";
+
+  const ids = getValidTargetIds();
+
+  if (!ids.length){
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+
+  ids.sort((a,b)=> state.players[a].name.localeCompare(state.players[b].name));
+
+  for (const pid of ids){
+    const p = state.players[pid];
+
+    const row = document.createElement("div");
+    row.className = "prow clickRow";
+
+    const left = document.createElement("div");
+    left.className = "pL";
+
+    const sw = document.createElement("div");
+    sw.className = "sw";
+    sw.style.background = p.assignedColorHex || "transparent";
+
+    const wrap = document.createElement("div");
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.gap = "2px";
+
+    const name = document.createElement("div");
+    name.className = "pname";
+    name.textContent = p.name;
+
+    const meta = document.createElement("div");
+    meta.className = "muted";
+    const conf = (p.assignedConfidence != null) ? Math.round(p.assignedConfidence*100) : null;
+    meta.textContent =
+      `${state.settings.gameType === "team" ? `Team ${p.team || "?"}` : "Solo"}`
+      + ` • ${p.assignedColorHex || "—"}`
+      + (conf != null ? ` • Conf ${conf}%` : "");
+
+    wrap.appendChild(name);
+    wrap.appendChild(meta);
+
+    left.appendChild(sw);
+    left.appendChild(wrap);
+
+    const right = document.createElement("div");
+    right.className = "badge";
+    right.textContent = (activeTargetId === pid) ? "SELECTED" : "SELECT";
+
+    row.appendChild(left);
+    row.appendChild(right);
+
+    row.addEventListener("click", () => {
+      activeTargetId = pid;
+      renderActiveTargetUI();
+
+      const conf = (p.assignedConfidence != null) ? p.assignedConfidence : 1;
+      if (conf < 0.35) {
+        showToast("Target selected, but uniform confidence is low. Lighting/colors may cause misses.", "warn", 2800);
+      } else {
+        showToast(`Target set: ${p.name}`, "ok", 1400);
+      }
+
+      closeTargetModal();
+    });
+
+    list.appendChild(row);
+  }
+}
+
+/* =========================
    Game actions
 ========================= */
 $("shootBtn").addEventListener("click", () => {
@@ -1447,7 +1685,7 @@ $("shootBtn").addEventListener("click", () => {
   const s = state.settings;
   const limited = (s.mode === "limited");
 
-  // If limited & earnTask active -> treat shoot as EARN attempt (crosshair sample)
+  // Limited & earnTask active -> earn attempt
   if (limited && me.earnTask) {
     const cross = sampleCrosshairColor($("video2"), $("gameCamWrap"), facingMode2);
     if (!cross) {
@@ -1471,11 +1709,19 @@ $("shootBtn").addEventListener("click", () => {
     return;
   }
 
-  // Attack shot requires target in crosshair bbox
+  // NEW: require selected bullet target for attack shots
+  validateActiveTarget();
+  if (!activeTargetId) {
+    showToast("Select Bullets (target player) before shooting.", "warn", 2200);
+    $("statusText").textContent = "NO TARGET SELECTED";
+    $("confText").textContent = "—";
+    return;
+  }
+
+  // Attack requires target in crosshair bbox
   const wrap = $("gameCamWrap");
   const { x:cx, y:cy } = getCrosshairCssPoint(wrap);
 
-  // if front camera, overlay is mirrored; we check with corrected px
   const rect = wrap.getBoundingClientRect();
   const px = (facingMode2 === "user") ? (rect.width - cx) : cx;
 
@@ -1484,16 +1730,27 @@ $("shootBtn").addEventListener("click", () => {
   if (!hasTarget) {
     $("statusText").textContent = "MISS";
     $("confText").textContent = "—";
-    showToast("MISS (no target)", "warn", 1400);
-    socket.emit("game:shoot", { roomId, shootType: "attack", hasTarget: false });
+    showToast("MISS (no target in crosshair)", "warn", 1400);
+    socket.emit("game:shoot", {
+      roomId,
+      shootType: "attack",
+      hasTarget: false,
+      intentTargetId: activeTargetId
+    });
     return;
   }
 
-  // torso pick observation
+  // torso observation
   const picked = pickDominantTargetColor($("video2"), $("gameCamWrap"), lastTarget2, facingMode2);
   if (!picked) {
     showToast("Could not read target uniform color.", "warn", 1800);
-    socket.emit("game:shoot", { roomId, shootType: "attack", hasTarget: true, torsoObs: null });
+    socket.emit("game:shoot", {
+      roomId,
+      shootType: "attack",
+      hasTarget: true,
+      intentTargetId: activeTargetId,
+      torsoObs: null
+    });
     return;
   }
 
@@ -1504,10 +1761,12 @@ $("shootBtn").addEventListener("click", () => {
     showToast("Low confidence target sample (lighting/uniform).", "warn", 2400);
   }
 
+  // IMPORTANT: send intended target id so server checks against that player's assigned color
   socket.emit("game:shoot", {
     roomId,
     shootType: "attack",
     hasTarget: true,
+    intentTargetId: activeTargetId,
     torsoObs: { rgb: picked.rgb, confidence: picked.confidence },
     crossObs: null
   });
@@ -1545,23 +1804,13 @@ const observer = new MutationObserver(async () => {
       showToast("Camera failed (need HTTPS on mobile).", "warn", 2800);
     }
   }
-  if (!gameActive && gameCamStarted) {
-    // keep running unless you want to stop; MVP keeps it
-  }
 });
 observer.observe(document.body, { attributes:true, subtree:true, attributeFilter:["class"] });
-
-/* If we land in lobby, ensure game cam is off */
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    // optional: stop cams when hidden
-  }
-});
 
 /* =========================
    Boot
 ========================= */
-(async function boot(){
+(function boot(){
   $("statusText").textContent = "Idle";
   $("confText").textContent = "—";
 })();

@@ -1,8 +1,8 @@
 // server.js
-// MVP server for Camera Color Shooter
+// MVP server for Camera Color Shooter (Revised)
 // Run: npm i express socket.io
 // Start: node server.js
-// Open: http://localhost:3000  (use HTTPS for mobile camera unless localhost)
+// Open: http://localhost:3000  (mobile camera needs HTTPS unless localhost)
 
 const express = require("express");
 const http = require("http");
@@ -10,7 +10,9 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, {
+  cors: { origin: "*" },
+});
 
 app.use(express.static(__dirname)); // serves index.html in same folder
 
@@ -24,7 +26,13 @@ function genRoomId() {
   return id;
 }
 
-function now() { return Date.now(); }
+function now() {
+  return Date.now();
+}
+
+function clamp(v, a, b) {
+  return Math.max(a, Math.min(b, v));
+}
 
 // curated palette for limited-mode crafting (easy colors in real world)
 const CRAFT_PALETTE = [
@@ -32,27 +40,29 @@ const CRAFT_PALETTE = [
   "#ff7a00", "#7a00ff", "#00ff7a", "#ff007a", "#7a7a7a", "#ffffff"
 ];
 
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-
-function hexToRgb(hex) {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
-  if (!m) return { r: 255, g: 0, b: 0 };
-  return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
-}
-function rgbDist(a, b) {
-  const dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b;
-  return Math.sqrt(dr * dr + dg * dg + db * db);
-}
 function normalizeHex(hex) {
   hex = (hex || "").trim().toLowerCase();
   if (/^#[0-9a-f]{6}$/.test(hex)) return hex;
   return "#ff0000";
 }
 
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
+  if (!m) return { r: 255, g: 0, b: 0 };
+  return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
+}
+
+function rgbDist(a, b) {
+  const dr = a.r - b.r,
+    dg = a.g - b.g,
+    db = a.b - b.b;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
 function makeDefaultSettings() {
   return {
-    gameType: "team",        // team | chaos
-    mode: "standard",        // standard | limited
+    gameType: "team", // team | chaos
+    mode: "standard", // standard | limited
     gameSeconds: 180,
 
     damagePerHit: 10,
@@ -73,26 +83,36 @@ function roomSnapshot(room) {
     phase: room.phase,
     settings: room.settings,
     timer: room.timer,
+    winner: room.winner || null,
     players: Object.fromEntries(
-      Object.entries(room.players).map(([pid, p]) => [pid, {
-        id: p.id,
-        name: p.name,
-        team: p.team,
-        assignedColorHex: p.assignedColorHex || null,
-        assignedConfidence: p.assignedConfidence ?? null,
+      Object.entries(room.players).map(([pid, p]) => [
+        pid,
+        {
+          id: p.id,
+          name: p.name,
+          team: p.team,
+          assignedColorHex: p.assignedColorHex || null,
+          assignedConfidence: p.assignedConfidence ?? null,
 
-        hp: p.hp,
-        alive: p.alive,
+          hp: p.hp,
+          alive: p.alive,
 
-        bullets: (p.bullets === Infinity ? "INF" : p.bullets),
-        shields: p.shields,
-        shieldActiveUntil: p.shieldActiveUntil || 0,
+          bullets: p.bullets === Infinity ? "INF" : p.bullets,
+          shields: p.shields,
+          shieldActiveUntil: p.shieldActiveUntil || 0,
 
-        earnTask: p.earnTask ? { type: p.earnTask.type, colorHex: p.earnTask.colorHex, expiresAt: p.earnTask.expiresAt } : null,
+          earnTask: p.earnTask
+            ? {
+                type: p.earnTask.type,
+                colorHex: p.earnTask.colorHex,
+                expiresAt: p.earnTask.expiresAt,
+              }
+            : null,
 
-        stats: p.stats
-      }])
-    )
+          stats: p.stats,
+        },
+      ])
+    ),
   };
 }
 
@@ -102,27 +122,32 @@ function isHost(room, socket) {
 
 function autoAssignTeams(room) {
   if (!room) return;
+
   const ids = Object.keys(room.players);
+
   if (room.settings.gameType !== "team") {
     for (const id of ids) room.players[id].team = null;
     return;
   }
+
   // stable assignment by join order timestamp
   ids.sort((a, b) => room.players[a].joinedAt - room.players[b].joinedAt);
+
   for (let i = 0; i < ids.length; i++) {
-    room.players[ids[i]].team = (i % 2 === 0) ? "A" : "B";
+    room.players[ids[i]].team = i % 2 === 0 ? "A" : "B";
   }
 }
 
 function allPlayersAssignedColors(room) {
   const ids = Object.keys(room.players);
   if (ids.length < 2) return false;
-  return ids.every(id => !!room.players[id].assignedColorHex);
+  return ids.every((id) => !!room.players[id].assignedColorHex);
 }
 
 function aliveCount(room) {
-  return Object.values(room.players).filter(p => p.alive).length;
+  return Object.values(room.players).filter((p) => p.alive).length;
 }
+
 function aliveTeams(room) {
   const set = new Set();
   for (const p of Object.values(room.players)) {
@@ -133,16 +158,7 @@ function aliveTeams(room) {
   return set;
 }
 
-function endGame(room, reason = "time") {
-  if (!room || room.phase !== "playing") return;
-  room.phase = "results";
-  room.timer = { ...room.timer, endedAt: now(), reason };
-
-  io.to(room.id).emit("room:state", roomSnapshot(room));
-}
-
 function computeWinner(room) {
-  // basic winner logic
   const players = Object.values(room.players);
 
   if (room.settings.gameType === "chaos") {
@@ -160,18 +176,27 @@ function computeWinner(room) {
   for (const p of players) {
     const t = p.team;
     if (!t || !teamAgg[t]) continue;
-    teamAgg[t].kills += (p.stats.kills || 0);
-    teamAgg[t].damage += (p.stats.damageDealt || 0);
+    teamAgg[t].kills += p.stats.kills || 0;
+    teamAgg[t].damage += p.stats.damageDealt || 0;
   }
-  const A = teamAgg.A, B = teamAgg.B;
+  const A = teamAgg.A,
+    B = teamAgg.B;
   let win = "A";
   if (B.kills > A.kills) win = "B";
   else if (B.kills === A.kills && B.damage > A.damage) win = "B";
   return { type: "team", team: win };
 }
 
+function endGame(room, reason = "time") {
+  if (!room || room.phase !== "playing") return;
+  room.phase = "results";
+  room.timer = { ...room.timer, endedAt: now(), reason };
+  room.winner = computeWinner(room);
+  io.to(room.id).emit("room:state", roomSnapshot(room));
+}
+
 function resolveTargetByColor(room, shooterId, obs) {
-  // obs: { rgb:{r,g,b}, confidence:number, kind:"torso" }
+  // obs: { rgb:{r,g,b}, confidence:number }
   // returns playerId or null
   if (!obs || !obs.rgb) return null;
 
@@ -183,6 +208,7 @@ function resolveTargetByColor(room, shooterId, obs) {
     if (!p.assignedColorHex) continue;
     if (!p.alive) continue;
     if (pid === shooterId) continue;
+
     // friendly fire off in team mode
     if (room.settings.gameType === "team" && shooter.team && p.team && shooter.team === p.team) continue;
 
@@ -206,7 +232,6 @@ function resolveTargetByColor(room, shooterId, obs) {
 function canShoot(room, player) {
   if (!player.alive) return { ok: false, reason: "dead" };
   if (room.settings.mode === "standard") return { ok: true };
-  // limited:
   if (player.bullets <= 0) return { ok: false, reason: "no_bullets" };
   return { ok: true };
 }
@@ -217,23 +242,23 @@ function applyDamage(room, shooterId, targetId) {
   if (!shooter || !target) return;
 
   const dmg = clamp(Number(room.settings.damagePerHit || 10), 1, 999);
-  const nowTs = now();
+  const ts = now();
 
-  const shieldActive = (target.shieldActiveUntil || 0) > nowTs;
+  const shieldActive = (target.shieldActiveUntil || 0) > ts;
 
   if (!shieldActive) {
     target.hp -= dmg;
     if (target.hp < 0) target.hp = 0;
   }
-  // stats
+
   shooter.stats.hits += 1;
   shooter.stats.damageDealt += dmg;
   shooter.stats.hitLog.push({
-    t: nowTs,
+    t: ts,
     targetId,
     targetName: target.name,
     dmg,
-    shielded: shieldActive
+    shielded: shieldActive,
   });
 
   if (!shieldActive && target.hp <= 0 && target.alive) {
@@ -244,18 +269,34 @@ function applyDamage(room, shooterId, targetId) {
 
 function tickRoomTimers() {
   const ts = now();
+
   for (const room of rooms.values()) {
+    // expire earn tasks in limited mode (prevents stale tasks if player never shoots)
+    if (room.phase === "playing" && room.settings.mode === "limited") {
+      let changed = false;
+      for (const p of Object.values(room.players)) {
+        if (p.earnTask && ts > p.earnTask.expiresAt) {
+          p.earnTask = null;
+          changed = true;
+        }
+      }
+      if (changed) io.to(room.id).emit("room:state", roomSnapshot(room));
+    }
+
     if (room.phase !== "playing") continue;
+
+    // time end
     if (room.timer?.endAt && ts >= room.timer.endAt) {
       endGame(room, "time");
+      continue;
+    }
+
+    // elimination end
+    if (room.settings.gameType === "chaos") {
+      if (aliveCount(room) <= 1) endGame(room, "elimination");
     } else {
-      // elimination
-      if (room.settings.gameType === "chaos") {
-        if (aliveCount(room) <= 1) endGame(room, "elimination");
-      } else {
-        const teams = aliveTeams(room);
-        if (teams.size <= 1) endGame(room, "elimination");
-      }
+      const teams = aliveTeams(room);
+      if (teams.size <= 1) endGame(room, "elimination");
     }
   }
 }
@@ -271,6 +312,7 @@ io.on("connection", (socket) => {
       settings: makeDefaultSettings(),
       players: {},
       timer: null,
+      winner: null,
     };
     rooms.set(roomId, room);
 
@@ -292,7 +334,7 @@ io.on("connection", (socket) => {
 
       earnTask: null,
 
-      stats: { hits: 0, kills: 0, damageDealt: 0, hitLog: [] }
+      stats: { hits: 0, kills: 0, damageDealt: 0, hitLog: [] },
     };
 
     socket.join(roomId);
@@ -324,13 +366,13 @@ io.on("connection", (socket) => {
       hp: room.settings.maxHp,
       alive: true,
 
-      bullets: (room.settings.mode === "limited") ? room.settings.initialBullets : Infinity,
+      bullets: room.settings.mode === "limited" ? room.settings.initialBullets : Infinity,
       shields: room.settings.initialShields,
       shieldActiveUntil: 0,
 
       earnTask: null,
 
-      stats: { hits: 0, kills: 0, damageDealt: 0, hitLog: [] }
+      stats: { hits: 0, kills: 0, damageDealt: 0, hitLog: [] },
     };
 
     socket.join(roomId);
@@ -344,7 +386,6 @@ io.on("connection", (socket) => {
     if (!isHost(room, socket)) return;
     if (room.phase !== "lobby") return;
 
-    // merge and validate
     const s = room.settings;
 
     if (settings.gameType === "team" || settings.gameType === "chaos") s.gameType = settings.gameType;
@@ -362,8 +403,8 @@ io.on("connection", (socket) => {
     const ib = Number(settings.initialBullets);
     if (Number.isFinite(ib)) s.initialBullets = clamp(ib, 0, 999);
 
-    const is = Number(settings.initialShields);
-    if (Number.isFinite(is)) s.initialShields = clamp(is, 0, 2);
+    const ish = Number(settings.initialShields);
+    if (Number.isFinite(ish)) s.initialShields = clamp(ish, 0, 2);
 
     const sd = Number(settings.shieldDurationSec);
     if (Number.isFinite(sd)) s.shieldDurationSec = clamp(sd, 5, 60);
@@ -371,9 +412,9 @@ io.on("connection", (socket) => {
     const sc = Number(settings.shieldCap);
     if (Number.isFinite(sc)) s.shieldCap = clamp(sc, 0, 2);
 
-    // apply team assignment rule
     autoAssignTeams(room);
 
+    // Note: we do not auto-rewrite existing bullets/shields in lobby; game:start initializes.
     io.to(room.id).emit("room:state", roomSnapshot(room));
   });
 
@@ -405,8 +446,9 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // initialize players
     room.phase = "playing";
+    room.winner = null;
+
     const s = room.settings;
     const ts = now();
     room.timer = { startAt: ts, endAt: ts + s.gameSeconds * 1000, endedAt: 0, reason: null };
@@ -432,6 +474,38 @@ io.on("connection", (socket) => {
     io.to(room.id).emit("room:state", roomSnapshot(room));
   });
 
+  // NEW: host resets results -> lobby properly
+  socket.on("game:reset", ({ roomId }) => {
+    const room = rooms.get(String(roomId || "").trim());
+    if (!room) return;
+    if (!isHost(room, socket)) return;
+
+    room.phase = "lobby";
+    room.timer = null;
+    room.winner = null;
+
+    const s = room.settings;
+
+    for (const p of Object.values(room.players)) {
+      p.hp = s.maxHp;
+      p.alive = true;
+      p.shieldActiveUntil = 0;
+      p.earnTask = null;
+      p.stats = { hits: 0, kills: 0, damageDealt: 0, hitLog: [] };
+
+      if (s.mode === "standard") {
+        p.bullets = Infinity;
+        p.shields = s.initialShields;
+      } else {
+        p.bullets = s.initialBullets;
+        p.shields = clamp(s.initialShields, 0, s.shieldCap);
+      }
+    }
+
+    autoAssignTeams(room);
+    io.to(room.id).emit("room:state", roomSnapshot(room));
+  });
+
   socket.on("game:shieldActivate", ({ roomId }) => {
     const room = rooms.get(String(roomId || "").trim());
     if (!room) return;
@@ -447,7 +521,6 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // consume shield only when activating
     if (p.shields <= 0) {
       socket.emit("game:toast", { type: "warn", message: "No shields. Earn one first." });
       return;
@@ -482,6 +555,7 @@ io.on("connection", (socket) => {
 
     const colorHex = CRAFT_PALETTE[Math.floor(Math.random() * CRAFT_PALETTE.length)];
     p.earnTask = { type, colorHex, expiresAt: now() + 20000 }; // 20s to complete
+
     io.to(room.id).emit("room:state", roomSnapshot(room));
   });
 
@@ -492,12 +566,12 @@ io.on("connection", (socket) => {
 
     const shooter = room.players[socket.id];
     if (!shooter) return;
+
     if (!shooter.alive) {
       socket.emit("game:toast", { type: "warn", message: "You are dead." });
       return;
     }
 
-    // If limited mode: resolve whether this shot is for earning or attacking
     const limited = room.settings.mode === "limited";
 
     // EARN shot
@@ -521,7 +595,6 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // validate confidence
       const conf = clamp(Number(crossObs.confidence ?? 0.3), 0, 1);
       if (conf < 0.25) {
         socket.emit("game:toast", { type: "warn", message: "Low confidence sample. Get closer / better light." });
@@ -552,13 +625,11 @@ io.on("connection", (socket) => {
     }
 
     // ATTACK shot
-    // must have a target under crosshair (client-side)
     if (!hasTarget) {
       socket.emit("game:toast", { type: "warn", message: "MISS (no target)" });
       return;
     }
 
-    // ammo check
     const shootCheck = canShoot(room, shooter);
     if (!shootCheck.ok) {
       if (shootCheck.reason === "no_bullets") socket.emit("game:toast", { type: "warn", message: "No bullets. Earn bullets first." });
@@ -584,13 +655,13 @@ io.on("connection", (socket) => {
 
     applyDamage(room, socket.id, targetId);
 
-    // broadcast state
     io.to(room.id).emit("room:state", roomSnapshot(room));
   });
 
   socket.on("room:leave", ({ roomId }) => {
     const room = rooms.get(String(roomId || "").trim());
     if (!room) return;
+
     socket.leave(room.id);
     delete room.players[socket.id];
 
@@ -610,7 +681,6 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    // remove from any room that contains this socket
     for (const room of rooms.values()) {
       if (!room.players[socket.id]) continue;
 
@@ -635,7 +705,5 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log("For mobile camera: use HTTPS or open from the phone as http://<your-lan-ip>:3000 with HTTPS proxy/tunnel.");
+  console.log("For mobile camera: use HTTPS or localhost. Consider a tunnel/proxy if needed.");
 });
-
- 

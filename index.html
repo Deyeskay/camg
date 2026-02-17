@@ -21,6 +21,10 @@
     --danger:#b91c1c;
     --ok:#22c55e;
     --warn:#f59e0b;
+
+    --hudGlass: rgba(10, 15, 25, 0.58);
+    --hudStroke: rgba(255,255,255,0.14);
+    --hudShadow: 0 12px 30px rgba(0,0,0,0.38);
   }
   body{
     margin:0;
@@ -40,12 +44,14 @@
   .screen{ display:none; }
   .screen.active{ display:block; }
 
+  /* Cards / lobby baseline */
   .card{
     background:var(--bg);
     border:1px solid var(--stroke);
     border-radius:16px;
     padding:12px;
     margin-top:12px;
+    box-shadow: 0 10px 26px rgba(0,0,0,0.20);
   }
   .row{
     display:flex;
@@ -63,6 +69,7 @@
     display:inline-flex;
     align-items:center;
     gap:8px;
+    border:1px solid rgba(255,255,255,0.06);
   }
   .btn{
     border:none;
@@ -90,7 +97,7 @@
   label{ font-size:12px; opacity:0.85; }
   .field{ display:flex; flex-direction:column; gap:6px; flex:1; min-width:140px; }
 
-  /* Camera */
+  /* Camera wrapper (lobby) */
   .wrapper{
     position:relative;
     width:100%;
@@ -189,39 +196,8 @@
     border-radius:999px;
     font-size:12px;
     background:rgba(255,255,255,0.08);
+    border:1px solid rgba(255,255,255,0.06);
   }
-
-  /* Game HUD */
-  .hud{
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-  }
-  .hpbar{
-    width:160px;
-    height:10px;
-    border-radius:999px;
-    background:rgba(255,255,255,0.12);
-    overflow:hidden;
-  }
-  .hpfill{
-    height:100%;
-    width:100%;
-    background:var(--ok);
-  }
-  .bigBtn{
-    width:100%;
-    padding:14px 16px;
-    border-radius:14px;
-    border:none;
-    background:var(--primary);
-    color:white;
-    font-weight:900;
-    font-size:18px;
-    cursor:pointer;
-  }
-  .bigBtn.danger{ background:var(--danger); }
-  .bigBtn.gray{ background:var(--btn); }
 
   /* Modal */
   .modalBackdrop{
@@ -266,12 +242,8 @@
   }
   .modalBody{ padding:12px 14px; }
 
-  .clickRow{
-    cursor:pointer;
-  }
-  .clickRow:hover{
-    background:rgba(255,255,255,0.08);
-  }
+  .clickRow{ cursor:pointer; }
+  .clickRow:hover{ background:rgba(255,255,255,0.08); }
 
   /* Toast */
   #toastWrap{
@@ -299,6 +271,261 @@
   }
   .toast.warn{ border-color: rgba(245, 158, 11, 0.45); }
   .toast.ok{ border-color: rgba(34, 197, 94, 0.45); }
+
+  /* =========================
+     GAME UI V2 (FPS HUD)
+  ========================= */
+  .gameStage{
+    position:relative;
+    width:100%;
+    height: calc(100vh - 28px); /* account for body padding */
+    max-height: 860px;
+    border-radius:18px;
+    overflow:hidden;
+    background:#000;
+    border:1px solid rgba(255,255,255,0.10);
+    box-shadow: 0 20px 55px rgba(0,0,0,0.45);
+  }
+  @media (max-width: 640px){
+    body{ padding:0; }
+    .app{ width:100vw; max-width:100vw; }
+    .gameStage{ height:100vh; border-radius:0; border:none; }
+  }
+
+  .gameCam{
+    position:absolute; inset:0;
+    background:#000;
+  }
+  #video2{
+    position:absolute; inset:0;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  #canvas2{
+    position:absolute; inset:0;
+    width:100%;
+    height:100%;
+  }
+
+  .hudTop{
+    position:absolute;
+    left:12px; right:12px; top:12px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    z-index:20;
+    pointer-events:none; /* allow camera interactions; buttons override */
+  }
+  .hudBox{
+    pointer-events:none;
+    background:var(--hudGlass);
+    border:1px solid var(--hudStroke);
+    border-radius:14px;
+    padding:10px 12px;
+    box-shadow: var(--hudShadow);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+  }
+  .hudBox .t{
+    font-size:14px;
+    font-weight:900;
+  }
+  .hudSub{
+    font-size:12px;
+    opacity:0.85;
+    margin-top:4px;
+  }
+
+  .targetSwBig{
+    width:58px;
+    height:58px;
+    border-radius:10px;
+    border:1px solid rgba(255,255,255,0.18);
+    background:transparent;
+    flex:0 0 auto;
+  }
+  .hudRight{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:10px;
+    pointer-events:none;
+  }
+  .hudMiniRow{
+    display:flex; gap:10px; align-items:center;
+    pointer-events:none;
+  }
+  .roomPill{
+    pointer-events:none;
+    background:var(--hudGlass);
+    border:1px solid var(--hudStroke);
+    border-radius:999px;
+    padding:8px 10px;
+    box-shadow: var(--hudShadow);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-size:13px;
+    font-weight:900;
+  }
+  .hudBtnIcon{
+    pointer-events:auto;
+    width:44px;
+    height:44px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.14);
+    background:rgba(10,15,25,0.62);
+    color:white;
+    box-shadow: var(--hudShadow);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:18px;
+  }
+
+  .hudBottom{
+    position:absolute;
+    left:12px; right:12px; bottom:12px;
+    z-index:25;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    gap:12px;
+    pointer-events:none;
+  }
+
+  .hudLeftCol,
+  .hudRightCol{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    pointer-events:none;
+  }
+  .hudCenterCol{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-end;
+    gap:10px;
+    pointer-events:none;
+  }
+
+  .circleBtn{
+    pointer-events:auto;
+    width:74px;
+    height:74px;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,0.14);
+    background:rgba(10,15,25,0.62);
+    color:white;
+    box-shadow: var(--hudShadow);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:22px;
+    user-select:none;
+  }
+  .circleBtn.primary{
+    background:rgba(37, 99, 235, 0.85);
+    border-color: rgba(37, 99, 235, 0.35);
+  }
+  .circleBtn:disabled{ opacity:0.45; cursor:not-allowed; }
+
+  .circleLabel{
+    margin-top:6px;
+    font-size:12px;
+    opacity:0.88;
+    text-align:center;
+    font-weight:800;
+  }
+
+  .hudBars{
+    width:100%;
+    max-width:380px;
+    pointer-events:none;
+    background:rgba(0,0,0,0.25);
+    border:1px solid rgba(255,255,255,0.10);
+    border-radius:16px;
+    padding:10px 12px;
+    box-shadow: var(--hudShadow);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .barRow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .barWrap{
+    flex:1;
+    height:12px;
+    border-radius:999px;
+    background:rgba(255,255,255,0.14);
+    overflow:hidden;
+    position:relative;
+  }
+  .barFill{
+    height:100%;
+    width:100%;
+    background:var(--ok);
+    border-radius:999px;
+  }
+  .barFillShield{
+    height:100%;
+    width:0%;
+    background:rgba(56, 189, 248, 0.95); /* cyan-ish */
+    border-radius:999px;
+  }
+  .barMeta{
+    min-width:54px;
+    text-align:right;
+    font-weight:900;
+    font-size:13px;
+    opacity:0.92;
+  }
+  .barLabel{
+    font-size:12px;
+    opacity:0.85;
+    margin-top:6px;
+    display:flex;
+    justify-content:space-between;
+  }
+
+  .earnBtn{
+    pointer-events:auto;
+    width:44px;
+    height:44px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.14);
+    background:rgba(10,15,25,0.62);
+    color:white;
+    box-shadow: var(--hudShadow);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:18px;
+  }
+  .earnStack{
+    display:flex;
+    gap:10px;
+    pointer-events:none;
+    align-items:center;
+    justify-content:center;
+  }
+
+  /* hide old game card layout spacing */
+  #screenGame .card{ display:none; }
 </style>
 </head>
 <body>
@@ -448,74 +675,100 @@
     </div>
   </div>
 
-  <!-- GAME SCREEN -->
+  <!-- GAME SCREEN (V2 FPS HUD) -->
   <div id="screenGame" class="screen">
-    <div class="row">
-      <h2 style="margin:0;">Game</h2>
-      <div class="pill">Room: <b id="roomCodeText2">----</b></div>
-    </div>
+    <div class="gameStage">
 
-    <div class="card">
-      <div class="row">
-        <div class="pill">Time Left: <b id="timeLeftText">—</b></div>
-        <div class="pill">Mode: <b id="modeText">—</b></div>
-        <div class="pill">Type: <b id="typeText">—</b></div>
-      </div>
-
-      <!-- NEW: target selection row -->
-      <div class="row" style="margin-top:10px;">
-        <button class="btn" id="pickTargetBtn">👥 Select Bullets</button>
-        <div class="pill" title="Who your bullets are targeting right now">
-          Target:
-          <span class="sw" id="activeTargetSw" style="background:transparent;"></span>
-          <b id="activeTargetText">None</b>
-          <span class="muted" id="activeTargetMeta"></span>
-        </div>
-      </div>
-
-      <div class="row" style="margin-top:10px;">
-        <div class="pill">HP:
-          <div class="hpbar"><div class="hpfill" id="hpFill"></div></div>
-          <b id="hpText">100</b>
-        </div>
-        <div class="pill">Bullets: <b id="bulletsText">—</b></div>
-        <div class="pill">Shields: <b id="shieldsText">—</b></div>
-        <div class="pill">Shield Active: <b id="shieldActiveText">—</b></div>
-      </div>
-
-      <div class="row" style="margin-top:10px;">
-        <button class="bigBtn" id="shootBtn">🔫 SHOOT</button>
-        <button class="bigBtn gray" id="shieldBtn">🛡 SHIELD</button>
-      </div>
-
-      <div class="row" id="limitedActions" style="display:none; margin-top:10px;">
-        <button class="btn" id="earnBulletBtn">🎯 Earn Bullet</button>
-        <button class="btn" id="earnShieldBtn">🎯 Earn Shield</button>
-        <div class="pill" title="Craft target color">
-          Target:
-          <span class="sw" id="craftSwatch" style="background:transparent;"></span>
-          <b id="craftText">—</b>
-          <span class="muted" id="craftConfText"></span>
-        </div>
-      </div>
-
-      <div class="wrapper" id="gameCamWrap" style="margin-top:12px;">
+      <!-- camera layer -->
+      <div class="gameCam" id="gameCamWrap">
         <video id="video2" autoplay playsinline muted></video>
         <canvas id="canvas2"></canvas>
         <div class="crosshair"><div class="dot"></div></div>
-        <button class="cornerBtn" id="switchBtn2" title="Switch camera">🔄</button>
       </div>
 
-      <div class="row" style="margin-top:10px;">
-        <div class="pill">Status: <b id="statusText">—</b></div>
-        <div class="pill">Confidence: <b id="confText">—</b></div>
+      <!-- TOP HUD -->
+      <div class="hudTop">
+        <div class="hudBox">
+          <div>
+            <div class="t">Time left: <span id="timeLeftText">—</span></div>
+            <div class="hudSub" id="modeTypeMini">
+              <span>Mode: <b id="modeText">—</b></span>
+              <span style="margin-left:10px;">Type: <b id="typeText">—</b></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+              <div class="targetSwBig" id="activeTargetSw" style="background:transparent;"></div>
+              <div>
+                <div class="t" id="activeTargetText">Target (—)</div>
+                <div class="hudSub" id="activeTargetMeta">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hudRight">
+          <div class="hudMiniRow">
+            <div class="roomPill">Room: <b id="roomCodeText2">----</b></div>
+            <button class="hudBtnIcon" id="switchBtn2" title="Switch camera">🔄</button>
+          </div>
+        </div>
       </div>
 
-      <div class="muted" style="margin-top:8px;">
-        Attack hits are resolved by uniform color mapping assigned in lobby.
-        In Limited mode, crafting uses crosshair sampling from environment.
+      <!-- BOTTOM HUD -->
+      <div class="hudBottom">
+        <!-- left: shield -->
+        <div class="hudLeftCol">
+          <button class="circleBtn" id="shieldBtn" title="Activate Shield">🛡</button>
+          <div class="circleLabel"><span id="shieldsText">—</span></div>
+          <div class="circleLabel" style="opacity:0.75;">Active: <b id="shieldActiveText">—</b></div>
+        </div>
+
+        <!-- center: bars + earn buttons (limited mode) -->
+        <div class="hudCenterCol">
+          <div class="earnStack" id="limitedActions" style="display:none;">
+            <button class="earnBtn" id="earnShieldBtn" title="Earn Shield">⬆🛡</button>
+            <button class="earnBtn" id="earnBulletBtn" title="Earn Bullet">⬆🔫</button>
+          </div>
+
+          <div class="hudBars">
+            <div class="barRow">
+              <div class="barWrap">
+                <div class="barFill" id="hpFill"></div>
+              </div>
+              <div class="barMeta"><span id="hpText">100</span></div>
+            </div>
+            <div class="barLabel">
+              <span>HP</span>
+              <span id="statusText">Idle</span>
+            </div>
+
+            <div style="height:10px;"></div>
+
+            <div class="barRow">
+              <div class="barWrap">
+                <div class="barFillShield" id="shieldFill"></div>
+              </div>
+              <div class="barMeta"><span id="confText">—</span></div>
+            </div>
+            <div class="barLabel">
+              <span>Shield (time)</span>
+              <span class="muted">Conf</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- right: select target + shoot -->
+        <div class="hudRightCol" style="align-items:flex-end;">
+          <button class="circleBtn" id="pickTargetBtn" title="Select Bullets">👥</button>
+          <div class="circleLabel">Select bullets</div>
+
+          <button class="circleBtn primary" id="shootBtn" title="Shoot">🔫</button>
+          <div class="circleLabel"><span id="bulletsText">—</span></div>
+        </div>
       </div>
     </div>
+
+    <!-- keep old card hidden (CSS) so IDs remain valid if referenced -->
+    <div class="card"></div>
   </div>
 
   <!-- RESULTS SCREEN -->
@@ -546,7 +799,7 @@
 
 </div>
 
-<!-- Target picker modal (NEW) -->
+<!-- Target picker modal -->
 <div class="modalBackdrop" id="targetModal">
   <div class="modal">
     <div class="modalHeader">
@@ -575,11 +828,11 @@ const socket = io();
 
 let roomId = null;
 let myId = null;
-let state = null; // room snapshot
+let state = null;
 let model = null;
 
-let stream1 = null; // lobby cam
-let stream2 = null; // game cam
+let stream1 = null;
+let stream2 = null;
 
 let facingMode1 = "environment";
 let facingMode2 = "environment";
@@ -599,19 +852,15 @@ const DETECT_FPS = 10;
 const DETECT_INTERVAL = 1000 / DETECT_FPS;
 const PERSON_SCORE_MIN = 0.55;
 
-// torso region for uniform sampling
 const REGION = { x0: 0.25, y0: 0.25, x1: 0.75, y1: 0.80 };
 
-// pick thresholds
 const PICK_SAT_MIN = 0.08;
 const PICK_VAL_MIN = 0.12;
 const CONF_WARN = 0.35;
 
-// for craft sampling
-const CRAFT_SAMPLE_SIZE = 16; // pixels square in video coords
+const CRAFT_SAMPLE_SIZE = 16;
 const CRAFT_CONF_WARN = 0.25;
 
-// NEW: active bullet target selection
 let activeTargetId = null;
 
 /* =========================
@@ -640,18 +889,8 @@ function showToast(message, type="ok", ms=2400){
   setTimeout(() => el.remove(), ms);
 }
 
-function normalizeHex(hex){
-  hex = (hex || "").trim().toLowerCase();
-  if(/^#[0-9a-f]{6}$/.test(hex)) return hex;
-  return "#ff0000";
-}
 function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
 
-function hexToRgb(hex){
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
-  if(!m) return { r:255, g:0, b:0 };
-  return { r: parseInt(m[1],16), g: parseInt(m[2],16), b: parseInt(m[3],16) };
-}
 function rgbToHsv(r, g, b){
   r/=255; g/=255; b/=255;
   const max = Math.max(r,g,b), min = Math.min(r,g,b);
@@ -673,7 +912,7 @@ function rgbToHex(r,g,b){
 }
 
 /* =========================
-   Screens: Start actions
+   Start actions
 ========================= */
 $("createRoomBtn").addEventListener("click", () => {
   const name = ($("nameInput").value || "Host").trim();
@@ -696,15 +935,14 @@ $("leaveBtn").addEventListener("click", () => {
   roomId = null;
   state = null;
   activeTargetId = null;
+  stopHudTicker();
   showScreen("screenStart");
 });
 
 /* =========================
    Server events
 ========================= */
-socket.on("connect", () => {
-  myId = socket.id;
-});
+socket.on("connect", () => { myId = socket.id; });
 
 socket.on("room:error", ({ message }) => showToast(message || "Error", "warn", 2600));
 socket.on("game:toast", ({ type, message }) => showToast(message || "", type || "ok", 2000));
@@ -713,26 +951,28 @@ socket.on("room:state", (snap) => {
   state = snap;
   roomId = snap.id;
 
-  // decide screen
-  if (snap.phase === "lobby") showScreen("screenLobby");
-  else if (snap.phase === "playing") showScreen("screenGame");
-  else if (snap.phase === "results") showScreen("screenResults");
+  if (snap.phase === "lobby") {
+    showScreen("screenLobby");
+    stopHudTicker();
+  }
+  else if (snap.phase === "playing") {
+    showScreen("screenGame");
+    startHudTicker();
+  }
+  else if (snap.phase === "results") {
+    showScreen("screenResults");
+    stopHudTicker();
+  }
 
-  // if our selected target left / invalid, clear it
   validateActiveTarget();
-
   renderAll();
 });
 
 /* =========================
    Render functions
 ========================= */
-function getMe(){
-  return state?.players?.[myId] || null;
-}
-function isHost(){
-  return state && state.hostId === myId;
-}
+function getMe(){ return state?.players?.[myId] || null; }
+function isHost(){ return state && state.hostId === myId; }
 function getHostName(){
   const h = state?.players?.[state?.hostId];
   return h ? h.name : "—";
@@ -741,7 +981,6 @@ function getHostName(){
 function renderAll(){
   if (!state) return;
 
-  // common
   $("roomCodeText").textContent = state.id;
   $("roomCodeText2").textContent = state.id;
   $("roomCodeText3").textContent = state.id;
@@ -750,25 +989,18 @@ function renderAll(){
   $("meNameText").textContent = me?.name || "—";
   $("hostNameText").textContent = getHostName();
 
-  if (state.phase === "lobby") {
-    renderLobby();
-  } else if (state.phase === "playing") {
-    renderGame();
-  } else if (state.phase === "results") {
-    renderResults();
-  }
+  if (state.phase === "lobby") renderLobby();
+  else if (state.phase === "playing") renderGame();
+  else if (state.phase === "results") renderResults();
 }
 
 function renderLobby(){
-  // host controls enabled/disabled
   const host = isHost();
-
   const s = state.settings;
 
   $("gameTypeSel").value = s.gameType;
   $("modeSel").value = s.mode;
   $("gameSecondsInp").value = s.gameSeconds;
-
   $("damageInp").value = s.damagePerHit;
   $("maxHpInp").value = s.maxHp;
 
@@ -783,7 +1015,6 @@ function renderLobby(){
     $(id).disabled = !host;
   }
 
-  // populate assign dropdown with players
   const sel = $("assignPlayerSel");
   sel.innerHTML = "";
   const ids = Object.keys(state.players);
@@ -796,11 +1027,9 @@ function renderLobby(){
     sel.appendChild(opt);
   }
 
-  // start button state: must have 2+ and all assigned colors
   const allAssigned = ids.length >= 2 && ids.every(pid => !!state.players[pid].assignedColorHex);
   $("startGameBtn").disabled = !host || !allAssigned;
 
-  // show players list
   const list = $("playersList");
   list.innerHTML = "";
   for (const pid of ids) {
@@ -848,21 +1077,15 @@ function renderLobby(){
 
 function validateActiveTarget(){
   if (!state || !activeTargetId) return;
-  if (!state.players?.[activeTargetId]) {
-    activeTargetId = null;
-    return;
-  }
+  if (!state.players?.[activeTargetId]) { activeTargetId = null; return; }
   if (activeTargetId === myId) activeTargetId = null;
 
-  // In team mode, disallow selecting same team
   const s = state.settings;
   const me = getMe();
   const tgt = state.players[activeTargetId];
   if (!me || !tgt) return;
 
-  if (s.gameType === "team" && me.team && tgt.team && me.team === tgt.team) {
-    activeTargetId = null;
-  }
+  if (s.gameType === "team" && me.team && tgt.team && me.team === tgt.team) activeTargetId = null;
 }
 
 function renderActiveTargetUI(){
@@ -872,34 +1095,43 @@ function renderActiveTargetUI(){
 
   if (!state) {
     sw.style.background = "transparent";
-    tx.textContent = "None";
-    meta.textContent = "";
+    tx.textContent = "Target (—)";
+    meta.textContent = "—";
     return;
   }
 
   const me = getMe();
   const s = state.settings;
 
+  // Priority: earnTask (craft) overrides enemy selection label
+  if (me?.earnTask) {
+    sw.style.background = me.earnTask.colorHex || "transparent";
+    const label = me.earnTask.type === "shield" ? "Target (Shield)" : "Target (Bullet)";
+    tx.textContent = label;
+    meta.textContent = "Aim crosshair at this color";
+    return;
+  }
+
+  // Enemy selection
   if (!activeTargetId || !state.players[activeTargetId]) {
     sw.style.background = "transparent";
-    tx.textContent = "None";
-    meta.textContent = s.gameType === "team" ? "(pick an opponent)" : "(pick a player)";
+    tx.textContent = "Target (Enemy)";
+    meta.textContent = s.gameType === "team" ? "Pick an opponent" : "Pick a player";
     return;
   }
 
   const tgt = state.players[activeTargetId];
   sw.style.background = tgt.assignedColorHex || "transparent";
-  tx.textContent = tgt.name;
+  tx.textContent = "Target (Enemy)";
 
-  let extra = "";
-  if (s.gameType === "team") extra = `• Team ${tgt.team || "?"}`;
-  if (tgt.alive === false) extra += (extra ? " " : "") + "• DEAD";
+  let extra = `${tgt.name}`;
+  if (s.gameType === "team") extra += ` • Team ${tgt.team || "?"}`;
+  if (tgt.alive === false) extra += " • DEAD";
 
-  // warn if color confidence low
   const conf = (tgt.assignedConfidence != null) ? Math.round(tgt.assignedConfidence*100) : null;
-  if (conf != null && conf < 35) extra += (extra ? " " : "") + `• LowConf ${conf}%`;
+  if (conf != null && conf < 35) extra += ` • LowConf ${conf}%`;
 
-  meta.textContent = extra ? `(${extra})` : "";
+  meta.textContent = extra;
 }
 
 function renderGame(){
@@ -910,47 +1142,78 @@ function renderGame(){
   $("modeText").textContent = s.mode;
   $("typeText").textContent = s.gameType;
 
-  // timer
-  const nowTs = Date.now();
   const endAt = state.timer?.endAt || 0;
-  const leftMs = Math.max(0, endAt - nowTs);
+  const leftMs = Math.max(0, endAt - Date.now());
   const leftSec = Math.ceil(leftMs/1000);
   $("timeLeftText").textContent = isFinite(leftSec) ? `${leftSec}s` : "—";
 
-  // hp
   $("hpText").textContent = `${me.hp}`;
   const hpPct = clamp(me.hp / (s.maxHp || 100), 0, 1);
   $("hpFill").style.width = `${Math.round(hpPct*100)}%`;
   $("hpFill").style.background = (hpPct > 0.5) ? "var(--ok)" : (hpPct > 0.25 ? "var(--warn)" : "var(--danger)");
 
-  // ammo/shield
   $("bulletsText").textContent = (me.bullets === "INF" ? "∞" : me.bullets);
-  $("shieldsText").textContent = `${me.shields}`;
-  $("shieldActiveText").textContent = (me.shieldActiveUntil > Date.now()) ? `${Math.ceil((me.shieldActiveUntil-Date.now())/1000)}s` : "No";
+  $("shieldsText").textContent = `${me.shields}/${s.shieldCap ?? 2}`;
 
   const alive = !!me.alive;
   $("shootBtn").disabled = !alive;
   $("shieldBtn").disabled = !alive;
 
-  // limited actions
   const isLimited = (s.mode === "limited");
   $("limitedActions").style.display = isLimited ? "flex" : "none";
   if (isLimited) {
     $("earnBulletBtn").disabled = !alive;
-    $("earnShieldBtn").disabled = !alive;
+    $("earnShieldBtn").disabled = !alive || (me.shields >= (s.shieldCap ?? 2));
+  }
 
-    if (me.earnTask) {
-      $("craftSwatch").style.background = me.earnTask.colorHex;
-      $("craftText").textContent = me.earnTask.type.toUpperCase();
-      $("craftConfText").textContent = "(aim & shoot color)";
-    } else {
-      $("craftSwatch").style.background = "transparent";
-      $("craftText").textContent = "—";
-      $("craftConfText").textContent = "";
-    }
+  // Shield status + time bar
+  const nowTs = Date.now();
+  const remMs = Math.max(0, (me.shieldActiveUntil || 0) - nowTs);
+  if (remMs > 0) {
+    const remSec = Math.ceil(remMs/1000);
+    $("shieldActiveText").textContent = `${remSec}s`;
+    const dur = (s.shieldDurationSec || 20) * 1000;
+    const pct = clamp(remMs / dur, 0, 1);
+    $("shieldFill").style.width = `${Math.round(pct*100)}%`;
+  } else {
+    $("shieldActiveText").textContent = "No";
+    $("shieldFill").style.width = `0%`;
   }
 
   renderActiveTargetUI();
+}
+
+/* realtime HUD ticker */
+let hudTicker = null;
+function startHudTicker(){
+  if (hudTicker) return;
+  hudTicker = setInterval(() => {
+    if (!state || state.phase !== "playing") return;
+
+    const endAt = state.timer?.endAt || 0;
+    const leftMs = Math.max(0, endAt - Date.now());
+    const leftSec = Math.ceil(leftMs / 1000);
+    $("timeLeftText").textContent = isFinite(leftSec) ? `${leftSec}s` : "—";
+
+    const me = getMe();
+    if (me) {
+      const s = state.settings;
+      const remMs = Math.max(0, (me.shieldActiveUntil || 0) - Date.now());
+      if (remMs > 0) {
+        $("shieldActiveText").textContent = `${Math.ceil(remMs/1000)}s`;
+        const dur = (s.shieldDurationSec || 20) * 1000;
+        $("shieldFill").style.width = `${Math.round(clamp(remMs/dur,0,1)*100)}%`;
+      } else {
+        $("shieldActiveText").textContent = "No";
+        $("shieldFill").style.width = `0%`;
+      }
+    }
+  }, 250);
+}
+function stopHudTicker(){
+  if (!hudTicker) return;
+  clearInterval(hudTicker);
+  hudTicker = null;
 }
 
 function renderResults(){
@@ -1009,12 +1272,10 @@ function renderResults(){
     list.appendChild(row);
   }
 
-  // my hit log
   const me = getMe();
   const log = me?.stats?.hitLog || [];
-  if (!log.length) {
-    $("myHitLog").textContent = "No hits recorded.";
-  } else {
+  if (!log.length) $("myHitLog").textContent = "No hits recorded.";
+  else {
     $("myHitLog").textContent = log.map(x => {
       const t = new Date(x.t).toLocaleTimeString();
       return `[${t}] Hit ${x.targetName} for ${x.dmg} (${x.shielded ? "SHIELDED" : "HP"})`;
@@ -1147,16 +1408,6 @@ function resizeCanvasToWrap(canvasEl, wrapEl, ctx){
   ctx.scale(dpr, dpr);
 }
 
-function getTorsoRectCss(target){
-  if(!target) return null;
-  let [x,y,w,h] = target.bboxCanvas;
-  const rx0 = x + w*REGION.x0;
-  const ry0 = y + h*REGION.y0;
-  const rx1 = x + w*REGION.x1;
-  const ry1 = y + h*REGION.y1;
-  return { x: rx0, y: ry0, w: (rx1-rx0), h: (ry1-ry0) };
-}
-
 function drawOverlay(ctx, wrapEl, persons, target, facingMode, showTorsoRect=false){
   const rect = wrapEl.getBoundingClientRect();
   ctx.clearRect(0,0,rect.width,rect.height);
@@ -1186,20 +1437,6 @@ function drawOverlay(ctx, wrapEl, persons, target, facingMode, showTorsoRect=fal
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  if (showTorsoRect && target) {
-    const t = getTorsoRectCss(target);
-    if (t) {
-      ctx.fillStyle = "rgba(255,214,10,0.12)";
-      ctx.strokeStyle = "rgba(255,214,10,0.95)";
-      ctx.lineWidth = 2;
-      ctx.fillRect(t.x, t.y, t.w, t.h);
-      ctx.strokeRect(t.x, t.y, t.w, t.h);
-      ctx.font="12px Arial";
-      ctx.fillStyle="rgba(255,214,10,0.95)";
-      ctx.fillText("sample", t.x+4, t.y+14);
-    }
-  }
-
   if (isFront) ctx.restore();
 }
 
@@ -1213,9 +1450,7 @@ function getTargetRegionInVideoPixels(videoEl, wrapEl, target, facingMode){
 
   let [xCss, yCss, wCss, hCss] = target.bboxCanvas;
 
-  if (facingMode === "user") {
-    xCss = rect.width - (xCss + wCss);
-  }
+  if (facingMode === "user") xCss = rect.width - (xCss + wCss);
 
   const rx0 = xCss + wCss * REGION.x0;
   const ry0 = yCss + hCss * REGION.y0;
@@ -1235,9 +1470,6 @@ function getTargetRegionInVideoPixels(videoEl, wrapEl, target, facingMode){
   return { x: cx, y: cy, w: cw, h: ch };
 }
 
-/* =========================
-   COLOR PICK (representative RGB from dominant hue bin)
-========================= */
 function pickDominantTargetColor(videoEl, wrapEl, target, facingMode){
   if(!target) return null;
 
@@ -1301,7 +1533,6 @@ function pickDominantTargetColor(videoEl, wrapEl, target, facingMode){
   for(let i=1;i<bins;i++) if(hist[i]>hist[bestBin]) bestBin=i;
 
   const confidence = hist[bestBin]/totalWeight;
-  const dominantHue = (bestBin+0.5)*binSize;
 
   const hueMin=bestBin*binSize, hueMax=hueMin+binSize;
 
@@ -1326,12 +1557,9 @@ function pickDominantTargetColor(videoEl, wrapEl, target, facingMode){
   if (n<20) return fallbackAvgRgb();
 
   const R=Math.round(sumR/n), G=Math.round(sumG/n), B=Math.round(sumB/n);
-  return { hex: rgbToHex(R,G,B), rgb:{r:R,g:G,b:B}, confidence, usedFallback:false, lowQuality, hue: dominantHue };
+  return { hex: rgbToHex(R,G,B), rgb:{r:R,g:G,b:B}, confidence, usedFallback:false, lowQuality };
 }
 
-/* =========================
-   Crosshair sampling for crafting
-========================= */
 function sampleCrosshairColor(videoEl, wrapEl, facingMode){
   const rect = wrapEl.getBoundingClientRect();
   const vw = videoEl.videoWidth || 1;
@@ -1560,7 +1788,7 @@ function cleanupCams(){
 }
 
 /* =========================
-   NEW: Target picker modal
+   Target picker modal
 ========================= */
 function openTargetModal(){
   renderTargetList();
@@ -1585,13 +1813,10 @@ function getValidTargetIds(){
 
   const s = state.settings;
   const ids = Object.keys(state.players).filter(pid => pid !== myId);
-
-  // must have assigned color
   const assigned = ids.filter(pid => !!state.players[pid].assignedColorHex);
 
   if (s.gameType === "chaos") return assigned;
 
-  // team mode: only opponents
   return assigned.filter(pid => {
     const p = state.players[pid];
     return me.team && p.team && me.team !== p.team;
@@ -1604,7 +1829,6 @@ function renderTargetList(){
   list.innerHTML = "";
 
   const ids = getValidTargetIds();
-
   if (!ids.length){
     empty.style.display = "block";
     return;
@@ -1661,11 +1885,8 @@ function renderTargetList(){
       renderActiveTargetUI();
 
       const conf = (p.assignedConfidence != null) ? p.assignedConfidence : 1;
-      if (conf < 0.35) {
-        showToast("Target selected, but uniform confidence is low. Lighting/colors may cause misses.", "warn", 2800);
-      } else {
-        showToast(`Target set: ${p.name}`, "ok", 1400);
-      }
+      if (conf < 0.35) showToast("Target selected, but uniform confidence is low. Lighting/colors may cause misses.", "warn", 2800);
+      else showToast(`Target set: ${p.name}`, "ok", 1400);
 
       closeTargetModal();
     });
@@ -1685,13 +1906,10 @@ $("shootBtn").addEventListener("click", () => {
   const s = state.settings;
   const limited = (s.mode === "limited");
 
-  // Limited & earnTask active -> earn attempt
+  // earn attempt
   if (limited && me.earnTask) {
     const cross = sampleCrosshairColor($("video2"), $("gameCamWrap"), facingMode2);
-    if (!cross) {
-      showToast("No color sample.", "warn", 1800);
-      return;
-    }
+    if (!cross) { showToast("No color sample.", "warn", 1800); return; }
     $("confText").textContent = `${Math.round(cross.confidence*100)}%`;
     $("statusText").textContent = "Earn attempt…";
 
@@ -1709,16 +1927,16 @@ $("shootBtn").addEventListener("click", () => {
     return;
   }
 
-  // NEW: require selected bullet target for attack shots
+  // require enemy selection
   validateActiveTarget();
   if (!activeTargetId) {
-    showToast("Select Bullets (target player) before shooting.", "warn", 2200);
-    $("statusText").textContent = "NO TARGET SELECTED";
+    showToast("Select bullets (enemy) before shooting.", "warn", 2200);
+    $("statusText").textContent = "NO ENEMY SELECTED";
     $("confText").textContent = "—";
     return;
   }
 
-  // Attack requires target in crosshair bbox
+  // require target in crosshair bbox
   const wrap = $("gameCamWrap");
   const { x:cx, y:cy } = getCrosshairCssPoint(wrap);
 
@@ -1740,7 +1958,6 @@ $("shootBtn").addEventListener("click", () => {
     return;
   }
 
-  // torso observation
   const picked = pickDominantTargetColor($("video2"), $("gameCamWrap"), lastTarget2, facingMode2);
   if (!picked) {
     showToast("Could not read target uniform color.", "warn", 1800);
@@ -1761,7 +1978,6 @@ $("shootBtn").addEventListener("click", () => {
     showToast("Low confidence target sample (lighting/uniform).", "warn", 2400);
   }
 
-  // IMPORTANT: send intended target id so server checks against that player's assigned color
   socket.emit("game:shoot", {
     roomId,
     shootType: "attack",
@@ -1807,9 +2023,7 @@ const observer = new MutationObserver(async () => {
 });
 observer.observe(document.body, { attributes:true, subtree:true, attributeFilter:["class"] });
 
-/* =========================
-   Boot
-========================= */
+/* Boot */
 (function boot(){
   $("statusText").textContent = "Idle";
   $("confText").textContent = "—";
